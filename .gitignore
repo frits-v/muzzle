@@ -1,0 +1,20 @@
+# Build artifacts
+/target/
+/bin/*.dSYM/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Session artifacts (never commit)
+.claude-changelog*
+.claude-trace*
+.claude-worktrees*
+.claude-tmp/
