@@ -49,7 +49,10 @@ fn main() {
 
     // Update spec file
     if let Err(e) = session::append_spec_entry(&sess.spec_file, &entry) {
-        eprintln!("ERROR: Worktree created but failed to update spec file: {}", e);
+        eprintln!(
+            "ERROR: Worktree created but failed to update spec file: {}",
+            e
+        );
         // Still print the path — the worktree exists even if spec write failed
         println!("{}", entry.wt_path);
         std::process::exit(1);

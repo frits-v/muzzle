@@ -74,10 +74,7 @@ fn route(input: &HookInput) -> Decision {
     }
 
     // Filesystem writes
-    if matches!(
-        input.tool_name.as_str(),
-        "Edit" | "Write" | "NotebookEdit"
-    ) {
+    if matches!(input.tool_name.as_str(), "Edit" | "Write" | "NotebookEdit") {
         return check_filesystem(input);
     }
 
@@ -138,7 +135,8 @@ fn check_filesystem(input: &HookInput) -> Decision {
     }
 
     let sess = session::resolve_readonly();
-    let result = sandbox::check_path_with_context(file_path, Some(&sess), sandbox::ToolContext::FileTool);
+    let result =
+        sandbox::check_path_with_context(file_path, Some(&sess), sandbox::ToolContext::FileTool);
 
     match result {
         sandbox::PathDecision::Allow => Decision::Allow,
@@ -177,20 +175,22 @@ fn check_bash(input: &HookInput) -> Decision {
 
         // FR-WE-2: If session exists but no worktrees, return WORKTREE_MISSING
         // so the agent can lazily create a worktree via ensure-worktree.
-        if !sess.worktree_active && bi.command.contains("git") {
-            if gitcheck::is_repo_git_op(&bi.command)
-                && !gitcheck::is_worktree_management_op(&bi.command)
-            {
-                if let Some(repo) = gitcheck::extract_repo_from_git_op(&bi.command) {
-                    return Decision::Deny(format!(
-                        "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                        repo, repo
-                    ));
-                }
-                return Decision::Deny(
-                    "BLOCKED: No worktree for this session. Cannot determine target repo from command.".into(),
-                );
+        if !sess.worktree_active
+            && bi.command.contains("git")
+            && gitcheck::is_repo_git_op(&bi.command)
+            && !gitcheck::is_worktree_management_op(&bi.command)
+        {
+            if let Some(repo) = gitcheck::extract_repo_from_git_op(&bi.command) {
+                return Decision::Deny(format!(
+                    "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
+                    repo, repo
+                ));
             }
+            return Decision::Deny(
+                "BLOCKED: No worktree for this session. \
+                 Cannot determine target repo from command."
+                    .into(),
+            );
         }
     }
 
@@ -213,7 +213,8 @@ fn check_bash(input: &HookInput) -> Decision {
             continue;
         }
 
-        let result = sandbox::check_path_with_context(actual_path, Some(&sess), sandbox::ToolContext::Bash);
+        let result =
+            sandbox::check_path_with_context(actual_path, Some(&sess), sandbox::ToolContext::Bash);
         match result {
             sandbox::PathDecision::Deny(reason) => return Decision::Deny(reason),
             sandbox::PathDecision::Ask(reason) => return Decision::Ask(reason),

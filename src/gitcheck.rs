@@ -97,9 +97,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
 
     // FR-GS-4: Delete main/master
     if RE_DELETE_MAIN.is_match(cmd) {
-        return GitResult::Block(
-            "BLOCKED: Deleting main/master branch is not allowed.".into(),
-        );
+        return GitResult::Block("BLOCKED: Deleting main/master branch is not allowed.".into());
     }
     if RE_DELETE_REFSPEC.is_match(cmd) {
         return GitResult::Block(
@@ -191,7 +189,9 @@ pub fn check_worktree_enforcement(
     // Check git -C <path>
     if let Some(caps) = RE_GIT_C.captures(cmd) {
         if let Some(m) = caps.get(1) {
-            let git_path = m.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+            let git_path = m
+                .as_str()
+                .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
             if is_main_checkout_path(git_path, &ws_str) {
                 let repo = extract_repo_name(git_path, &ws_str);
                 let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
@@ -212,7 +212,9 @@ pub fn check_worktree_enforcement(
     // Check cd <path> && git ...
     if let Some(caps) = RE_CD_PATH.captures(cmd) {
         if let Some(m) = caps.get(1) {
-            let cd_path = m.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+            let cd_path = m
+                .as_str()
+                .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
             if cmd.contains("git") && is_main_checkout_path(cd_path, &ws_str) {
                 let repo = extract_repo_name(cd_path, &ws_str);
                 let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
@@ -269,7 +271,9 @@ pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     // git -C path (prefixed to distinguish)
     for caps in RE_GIT_C_PATH.captures_iter(cmd) {
         if let Some(m) = caps.get(1) {
-            let p = m.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+            let p = m
+                .as_str()
+                .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
             if p.starts_with('/') {
                 paths.push(format!("gitc:{}", p));
             }
@@ -338,10 +342,7 @@ pub fn extract_repo_from_git_op(cmd: &str) -> Option<String> {
             }
         }
         // Fallback: try the broader pattern for paths without trailing slash
-        let pattern2 = format!(
-            r"\bgit\b[^;|&]*-C\s+\S*{}",
-            regex::escape(&ws_str)
-        );
+        let pattern2 = format!(r"\bgit\b[^;|&]*-C\s+\S*{}", regex::escape(&ws_str));
         if let Ok(re) = Regex::new(&pattern2) {
             if let Some(caps) = re.captures(cmd) {
                 if let Some(m) = caps.get(0) {
@@ -363,10 +364,7 @@ pub fn extract_repo_from_git_op(cmd: &str) -> Option<String> {
 
     // cd <workspace-path>/<repo> && git
     if cmd.contains("cd") {
-        let pattern = format!(
-            r"\bcd\s+\S*{}\S*\s*[;&|]+.*\bgit\b",
-            regex::escape(&ws_str)
-        );
+        let pattern = format!(r"\bcd\s+\S*{}\S*\s*[;&|]+.*\bgit\b", regex::escape(&ws_str));
         if let Ok(re) = Regex::new(&pattern) {
             if re.is_match(cmd) {
                 // Extract the cd path
@@ -587,12 +585,13 @@ mod tests {
     #[test]
     fn test_worktree_enforcement_worktree_allow() {
         let ws = crate::config::workspace();
-        let cmd = format!(
-            "git -C {}/my-app/.worktrees/abc12345 status",
-            ws.display()
-        );
+        let cmd = format!("git -C {}/my-app/.worktrees/abc12345 status", ws.display());
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
-        assert!(reason.is_none(), "expected allow for worktree path, got: {:?}", reason);
+        assert!(
+            reason.is_none(),
+            "expected allow for worktree path, got: {:?}",
+            reason
+        );
     }
 
     #[test]
@@ -600,7 +599,11 @@ mod tests {
         let ws = crate::config::workspace();
         let cmd = format!("git -C {}/my-app worktree add /path", ws.display());
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
-        assert!(reason.is_none(), "expected allow for worktree management, got: {:?}", reason);
+        assert!(
+            reason.is_none(),
+            "expected allow for worktree management, got: {:?}",
+            reason
+        );
     }
 
     #[test]
@@ -621,7 +624,12 @@ mod tests {
     fn test_bash_write_paths_redirect() {
         let paths = check_bash_write_paths("echo hello > /tmp/test.txt 2> /var/log/err");
         let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
-        assert_eq!(non_gitc.len(), 2, "expected 2 redirect paths, got {:?}", non_gitc);
+        assert_eq!(
+            non_gitc.len(),
+            2,
+            "expected 2 redirect paths, got {:?}",
+            non_gitc
+        );
     }
 
     #[test]
@@ -639,7 +647,11 @@ mod tests {
         let ws = crate::config::workspace();
         let cmd = format!("git -C {}/my-app status", ws.display());
         let repo = extract_repo_from_git_op(&cmd);
-        assert_eq!(repo.as_deref(), Some("my-app"), "should extract my-app from git -C");
+        assert_eq!(
+            repo.as_deref(),
+            Some("my-app"),
+            "should extract my-app from git -C"
+        );
     }
 
     #[test]
@@ -647,7 +659,11 @@ mod tests {
         let ws = crate::config::workspace();
         let cmd = format!("git -C {}/ops/modules/foo log", ws.display());
         let repo = extract_repo_from_git_op(&cmd);
-        assert_eq!(repo.as_deref(), Some("ops"), "should extract ops from nested path");
+        assert_eq!(
+            repo.as_deref(),
+            Some("ops"),
+            "should extract ops from nested path"
+        );
     }
 
     #[test]
@@ -655,7 +671,11 @@ mod tests {
         let ws = crate::config::workspace();
         let cmd = format!("cd {}/ops && git status", ws.display());
         let repo = extract_repo_from_git_op(&cmd);
-        assert_eq!(repo.as_deref(), Some("ops"), "should extract ops from cd pattern");
+        assert_eq!(
+            repo.as_deref(),
+            Some("ops"),
+            "should extract ops from cd pattern"
+        );
     }
 
     #[test]

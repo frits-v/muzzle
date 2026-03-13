@@ -37,14 +37,46 @@ pub struct InputFields {
 impl InputFields {
     pub fn from_value(v: &serde_json::Value) -> Self {
         Self {
-            command: v.get("command").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            file_path: v.get("file_path").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            notebook_path: v.get("notebook_path").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            repo: v.get("repo").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            title: v.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            branch: v.get("branch").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            project_key: v.get("projectKey").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            summary: v.get("summary").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            command: v
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            file_path: v
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            notebook_path: v
+                .get("notebook_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            repo: v
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            title: v
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            branch: v
+                .get("branch")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            project_key: v
+                .get("projectKey")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            summary: v
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
         }
     }
 }
@@ -59,8 +91,16 @@ pub struct OutputFields {
 impl OutputFields {
     pub fn from_value(v: &serde_json::Value) -> Self {
         Self {
-            stdout: v.get("stdout").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            stderr: v.get("stderr").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            stdout: v
+                .get("stdout")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            stderr: v
+                .get("stderr")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
         }
     }
 }
@@ -69,11 +109,29 @@ impl OutputFields {
 static READ_ONLY_TOOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut s = HashSet::new();
     for tool in &[
-        "Read", "Glob", "Grep", "WebSearch", "WebFetch",
-        "Task", "TaskList", "TaskGet", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskStop",
-        "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-        "ListMcpResourcesTool", "ReadMcpResourceTool",
-        "Skill", "ToolSearch", "SendMessage", "TeamCreate", "TeamDelete", "EnterWorktree",
+        "Read",
+        "Glob",
+        "Grep",
+        "WebSearch",
+        "WebFetch",
+        "Task",
+        "TaskList",
+        "TaskGet",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskOutput",
+        "TaskStop",
+        "AskUserQuestion",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "ListMcpResourcesTool",
+        "ReadMcpResourceTool",
+        "Skill",
+        "ToolSearch",
+        "SendMessage",
+        "TeamCreate",
+        "TeamDelete",
+        "EnterWorktree",
     ] {
         s.insert(*tool);
     }
@@ -84,10 +142,39 @@ static READ_ONLY_TOOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 static READ_ONLY_BASH_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut s = HashSet::new();
     for cmd in &[
-        "ls", "find", "tree", "cat", "head", "tail", "wc", "grep", "rg", "file",
-        "stat", "du", "df", "which", "type", "whoami", "pwd", "date", "uname", "id",
-        "env", "printenv", "echo", "printf", "diff", "/usr/bin/diff", "jq", "shasum",
-        "md5sum", "basename", "dirname", "realpath", "readlink",
+        "ls",
+        "find",
+        "tree",
+        "cat",
+        "head",
+        "tail",
+        "wc",
+        "grep",
+        "rg",
+        "file",
+        "stat",
+        "du",
+        "df",
+        "which",
+        "type",
+        "whoami",
+        "pwd",
+        "date",
+        "uname",
+        "id",
+        "env",
+        "printenv",
+        "echo",
+        "printf",
+        "diff",
+        "/usr/bin/diff",
+        "jq",
+        "shasum",
+        "md5sum",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
     ] {
         s.insert(*cmd);
     }
@@ -108,10 +195,8 @@ static RE_COMMIT_SHA: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[([^ ]+) ([0-9a-f]{7,})\]").unwrap());
 static RE_PUSH_RANGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[0-9a-f]+\.{2,3}[0-9a-f]+").unwrap());
-static RE_PUSH_REF: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"-> ([^\s]+)").unwrap());
-static RE_GIT_DIR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"-C\s+(\S+)").unwrap());
+static RE_PUSH_REF: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-> ([^\s]+)").unwrap());
+static RE_GIT_DIR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-C\s+(\S+)").unwrap());
 
 /// Check if a tool/command should be skipped (read-only).
 pub fn is_read_only(tool_name: &str, input: &InputFields) -> bool {
@@ -167,13 +252,22 @@ pub fn format_entry(tool_name: &str, input: &InputFields, output: &OutputFields)
             format!("`{}` **PR Created**: {} - {}", ts, input.repo, input.title)
         }
         "mcp__github__create_branch" => {
-            format!("`{}` **Branch Created**: {}/{}", ts, input.repo, input.branch)
+            format!(
+                "`{}` **Branch Created**: {}/{}",
+                ts, input.repo, input.branch
+            )
         }
         "mcp__github__create_issue" => {
-            format!("`{}` **GitHub Issue**: {} - {}", ts, input.repo, input.title)
+            format!(
+                "`{}` **GitHub Issue**: {} - {}",
+                ts, input.repo, input.title
+            )
         }
         "mcp__atlassian__createJiraIssue" | "mcp__claude_ai_Atlassian__createJiraIssue" => {
-            format!("`{}` **Jira Issue**: {} - {}", ts, input.project_key, input.summary)
+            format!(
+                "`{}` **Jira Issue**: {} - {}",
+                ts, input.project_key, input.summary
+            )
         }
         _ if tool_name.starts_with("mcp__") => {
             format!("`{}` **{}**", ts, tool_name)
@@ -193,7 +287,10 @@ fn format_bash_entry(ts: &str, input: &InputFields, output: &OutputFields) -> St
             let commit_branch = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             let commit_sha = caps.get(2).map(|m| m.as_str()).unwrap_or("");
 
-            let mut entry = format!("`{}` **COMMIT** `{}` on `{}`", ts, commit_sha, commit_branch);
+            let mut entry = format!(
+                "`{}` **COMMIT** `{}` on `{}`",
+                ts, commit_sha, commit_branch
+            );
 
             let git_dir = extract_git_dir(cmd);
             let file_list = get_commit_files(&git_dir, commit_sha);
@@ -375,13 +472,29 @@ mod tests {
     #[test]
     fn test_is_read_only_skip_tools() {
         let tools = [
-            "Read", "Glob", "Grep", "WebSearch", "WebFetch",
-            "Task", "TaskList", "TaskGet", "TaskCreate", "TaskUpdate",
-            "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-            "Skill", "ToolSearch", "SendMessage",
+            "Read",
+            "Glob",
+            "Grep",
+            "WebSearch",
+            "WebFetch",
+            "Task",
+            "TaskList",
+            "TaskGet",
+            "TaskCreate",
+            "TaskUpdate",
+            "AskUserQuestion",
+            "EnterPlanMode",
+            "ExitPlanMode",
+            "Skill",
+            "ToolSearch",
+            "SendMessage",
         ];
         for tool in &tools {
-            assert!(is_read_only(tool, &InputFields::default()), "{} should be read-only", tool);
+            assert!(
+                is_read_only(tool, &InputFields::default()),
+                "{} should be read-only",
+                tool
+            );
         }
     }
 
@@ -399,10 +512,23 @@ mod tests {
 
     #[test]
     fn test_is_read_only_bash_commands() {
-        let cmds = ["ls -la", "find . -name test", "cat file.txt", "grep -r pattern", "echo hello"];
+        let cmds = [
+            "ls -la",
+            "find . -name test",
+            "cat file.txt",
+            "grep -r pattern",
+            "echo hello",
+        ];
         for cmd in &cmds {
-            let input = InputFields { command: cmd.to_string(), ..Default::default() };
-            assert!(is_read_only("Bash", &input), "Bash {:?} should be read-only", cmd);
+            let input = InputFields {
+                command: cmd.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                is_read_only("Bash", &input),
+                "Bash {:?} should be read-only",
+                cmd
+            );
         }
     }
 
@@ -416,8 +542,15 @@ mod tests {
             "git remote -v",
         ];
         for cmd in &cmds {
-            let input = InputFields { command: cmd.to_string(), ..Default::default() };
-            assert!(is_read_only("Bash", &input), "Bash {:?} should be read-only", cmd);
+            let input = InputFields {
+                command: cmd.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                is_read_only("Bash", &input),
+                "Bash {:?} should be read-only",
+                cmd
+            );
         }
     }
 
@@ -430,8 +563,15 @@ mod tests {
             "git merge feature",
         ];
         for cmd in &cmds {
-            let input = InputFields { command: cmd.to_string(), ..Default::default() };
-            assert!(!is_read_only("Bash", &input), "Bash {:?} should NOT be read-only", cmd);
+            let input = InputFields {
+                command: cmd.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                !is_read_only("Bash", &input),
+                "Bash {:?} should NOT be read-only",
+                cmd
+            );
         }
     }
 
@@ -444,7 +584,11 @@ mod tests {
             "mcp__claude_ai_Sentry__get_issue_details",
         ];
         for tool in &tools {
-            assert!(is_read_only(tool, &InputFields::default()), "{} should be read-only", tool);
+            assert!(
+                is_read_only(tool, &InputFields::default()),
+                "{} should be read-only",
+                tool
+            );
         }
     }
 
@@ -452,42 +596,81 @@ mod tests {
     fn test_format_entry_edit() {
         let entry = format_entry(
             "Edit",
-            &InputFields { file_path: "/path/to/file.py".into(), ..Default::default() },
+            &InputFields {
+                file_path: "/path/to/file.py".into(),
+                ..Default::default()
+            },
             &OutputFields::default(),
         );
-        assert!(entry.contains("**Edit**"), "expected Edit marker in: {}", entry);
-        assert!(entry.contains("/path/to/file.py"), "expected file path in: {}", entry);
+        assert!(
+            entry.contains("**Edit**"),
+            "expected Edit marker in: {}",
+            entry
+        );
+        assert!(
+            entry.contains("/path/to/file.py"),
+            "expected file path in: {}",
+            entry
+        );
     }
 
     #[test]
     fn test_format_entry_write() {
         let entry = format_entry(
             "Write",
-            &InputFields { file_path: "/path/to/new.py".into(), ..Default::default() },
+            &InputFields {
+                file_path: "/path/to/new.py".into(),
+                ..Default::default()
+            },
             &OutputFields::default(),
         );
-        assert!(entry.contains("**Write**"), "expected Write marker in: {}", entry);
+        assert!(
+            entry.contains("**Write**"),
+            "expected Write marker in: {}",
+            entry
+        );
     }
 
     #[test]
     fn test_format_entry_bash_generic() {
         let entry = format_entry(
             "Bash",
-            &InputFields { command: "make build".into(), ..Default::default() },
+            &InputFields {
+                command: "make build".into(),
+                ..Default::default()
+            },
             &OutputFields::default(),
         );
-        assert!(entry.contains("**Bash**"), "expected Bash marker in: {}", entry);
-        assert!(entry.contains("make build"), "expected command in: {}", entry);
+        assert!(
+            entry.contains("**Bash**"),
+            "expected Bash marker in: {}",
+            entry
+        );
+        assert!(
+            entry.contains("make build"),
+            "expected command in: {}",
+            entry
+        );
     }
 
     #[test]
     fn test_format_entry_bash_git_commit() {
         let entry = format_entry(
             "Bash",
-            &InputFields { command: "git commit -m 'test'".into(), ..Default::default() },
-            &OutputFields { stdout: "[main abc1234] test commit".into(), ..Default::default() },
+            &InputFields {
+                command: "git commit -m 'test'".into(),
+                ..Default::default()
+            },
+            &OutputFields {
+                stdout: "[main abc1234] test commit".into(),
+                ..Default::default()
+            },
         );
-        assert!(entry.contains("**COMMIT**"), "expected COMMIT marker in: {}", entry);
+        assert!(
+            entry.contains("**COMMIT**"),
+            "expected COMMIT marker in: {}",
+            entry
+        );
         assert!(entry.contains("abc1234"), "expected SHA in: {}", entry);
     }
 
@@ -495,13 +678,20 @@ mod tests {
     fn test_format_entry_bash_git_push() {
         let entry = format_entry(
             "Bash",
-            &InputFields { command: "git push origin feature".into(), ..Default::default() },
+            &InputFields {
+                command: "git push origin feature".into(),
+                ..Default::default()
+            },
             &OutputFields {
                 stderr: "abc1234..def5678 feature -> feature".into(),
                 ..Default::default()
             },
         );
-        assert!(entry.contains("**PUSH**"), "expected PUSH marker in: {}", entry);
+        assert!(
+            entry.contains("**PUSH**"),
+            "expected PUSH marker in: {}",
+            entry
+        );
         assert!(entry.contains("origin"), "expected remote in: {}", entry);
     }
 
@@ -510,7 +700,10 @@ mod tests {
         let long_cmd = "x".repeat(300);
         let entry = format_entry(
             "Bash",
-            &InputFields { command: long_cmd, ..Default::default() },
+            &InputFields {
+                command: long_cmd,
+                ..Default::default()
+            },
             &OutputFields::default(),
         );
         assert!(entry.contains("..."), "expected truncation indicator");
@@ -528,7 +721,11 @@ mod tests {
             },
             &OutputFields::default(),
         );
-        assert!(entry.contains("**PR Created**"), "expected PR Created marker in: {}", entry);
+        assert!(
+            entry.contains("**PR Created**"),
+            "expected PR Created marker in: {}",
+            entry
+        );
     }
 
     #[test]
@@ -542,7 +739,11 @@ mod tests {
             },
             &OutputFields::default(),
         );
-        assert!(entry.contains("**Jira Issue**"), "expected Jira Issue marker in: {}", entry);
+        assert!(
+            entry.contains("**Jira Issue**"),
+            "expected Jira Issue marker in: {}",
+            entry
+        );
         assert!(entry.contains("CN"), "expected project key in: {}", entry);
     }
 

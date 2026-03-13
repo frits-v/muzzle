@@ -55,16 +55,26 @@ pub fn is_valid_worktree(path: &str) -> bool {
 pub fn branch_exists(repo_path: &Path, branch: &str) -> bool {
     let repo_str = repo_path.to_string_lossy().to_string();
     if run_git(&[
-        "-C", &repo_str, "show-ref", "--verify", "--quiet",
+        "-C",
+        &repo_str,
+        "show-ref",
+        "--verify",
+        "--quiet",
         &format!("refs/heads/{}", branch),
-    ]).is_ok()
+    ])
+    .is_ok()
     {
         return true;
     }
     if run_git(&[
-        "-C", &repo_str, "show-ref", "--verify", "--quiet",
+        "-C",
+        &repo_str,
+        "show-ref",
+        "--verify",
+        "--quiet",
         &format!("refs/remotes/origin/{}", branch),
-    ]).is_ok()
+    ])
+    .is_ok()
     {
         return true;
     }
@@ -78,7 +88,14 @@ pub fn fetch_and_resolve_default_branch(repo_path: &Path, tmp_dir: &Path) -> Str
 
     // 1. Try gh API (authoritative)
     if let Ok(output) = Command::new("gh")
-        .args(["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"])
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "defaultBranchRef",
+            "--jq",
+            ".defaultBranchRef.name",
+        ])
         .env("GIT_DIR", format!("{}/.git", repo_str))
         .current_dir(repo_path)
         .output()
@@ -109,11 +126,29 @@ pub fn fetch_and_resolve_default_branch(repo_path: &Path, tmp_dir: &Path) -> Str
     }
 
     // 3. Fallback: origin/main or origin/master
-    if run_git(&["-C", &repo_str, "show-ref", "--verify", "--quiet", "refs/remotes/origin/main"]).is_ok() {
+    if run_git(&[
+        "-C",
+        &repo_str,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/remotes/origin/main",
+    ])
+    .is_ok()
+    {
         fetch_origin(repo_path, tmp_dir);
         return "main".to_string();
     }
-    if run_git(&["-C", &repo_str, "show-ref", "--verify", "--quiet", "refs/remotes/origin/master"]).is_ok() {
+    if run_git(&[
+        "-C",
+        &repo_str,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/remotes/origin/master",
+    ])
+    .is_ok()
+    {
         fetch_origin(repo_path, tmp_dir);
         return "master".to_string();
     }
