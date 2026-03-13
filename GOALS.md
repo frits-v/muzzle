@@ -1,6 +1,6 @@
 # Goals
 
-Fitness goals for claude-hooks — session isolation hooks for Claude Code.
+Fitness goals for muzzle — session isolation hooks for Claude Code.
 
 ## North Stars
 

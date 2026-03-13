@@ -5,9 +5,9 @@
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use hooks_v3::config;
-use hooks_v3::session::{self, SpecEntry};
-use hooks_v3::worktree;
+use muzzle::config;
+use muzzle::session::{self, SpecEntry};
+use muzzle::worktree;
 use serde::Deserialize;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -25,7 +25,7 @@ fn main() {
 }
 
 fn run() {
-    // Skip for non-cn workspaces
+    // Skip when not running inside the configured workspace
     if !config::is_in_workspace() {
         std::process::exit(0);
     }

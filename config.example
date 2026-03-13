@@ -1,0 +1,11 @@
+# muzzle configuration
+#
+# Copy to ~/.config/muzzle/config and edit for your machine.
+# Alternatively, set the MUZZLE_WORKSPACE environment variable.
+#
+# Resolution order:
+#   1. MUZZLE_WORKSPACE env var
+#   2. workspace key in ~/.config/muzzle/config (this file)
+#   3. $HOME/src (default)
+
+workspace = /path/to/your/workspace

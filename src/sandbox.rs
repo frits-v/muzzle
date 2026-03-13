@@ -307,7 +307,7 @@ fn is_persistent_repo_config(subpath: &str) -> bool {
 /// Check if a path is a project config path (FR-WE-4).
 ///
 /// Matches both workspace-level config (e.g. `<ws>/.agents/`) and per-repo
-/// config (e.g. `<ws>/ml-upsell/.agents/`, `<ws>/my-app/CLAUDE.md`).
+/// config (e.g. `<ws>/ml-pipeline/.agents/`, `<ws>/web-app/CLAUDE.md`).
 /// Per-repo config paths must persist across sessions, not go to worktrees.
 fn is_config_path(path: &str, ws: &str) -> bool {
     let claude_prefix = format!("{}/.claude/", ws);
@@ -328,7 +328,7 @@ fn is_config_path(path: &str, ws: &str) -> bool {
     // Note: trailing slashes in starts_with() prevent false positives like .agentsfoo/
     let ws_prefix = format!("{}/", ws);
     if let Some(rest) = path.strip_prefix(&ws_prefix) {
-        // rest = "ml-upsell/.agents/foo.md" or "my-app/CLAUDE.md"
+        // rest = "ml-pipeline/.agents/foo.md" or "web-app/CLAUDE.md"
         // First segment is the repo name; after_repo is everything after it
         if let Some(slash_idx) = rest.find('/') {
             let after_repo = &rest[slash_idx..];
@@ -513,8 +513,8 @@ mod tests {
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
         let paths = [
-            format!("{}/my-app/.worktrees/abc12345/some/file.py", ws_str),
-            format!("{}/cuboh-core/.worktrees/abc12345/test.py", ws_str),
+            format!("{}/web-app/.worktrees/abc12345/some/file.py", ws_str),
+            format!("{}/api-server/.worktrees/abc12345/test.py", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -533,8 +533,8 @@ mod tests {
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
         let paths = [
-            format!("{}/my-app/app/main.py", ws_str),
-            format!("{}/cuboh-core/src/test.py", ws_str),
+            format!("{}/web-app/app/main.py", ws_str),
+            format!("{}/api-server/src/test.py", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -551,7 +551,7 @@ mod tests {
     fn test_no_worktree_session_deny() {
         let sess = sess_no_worktrees();
         let ws = config::workspace();
-        let p = format!("{}/my-app/app/main.py", ws.display());
+        let p = format!("{}/web-app/app/main.py", ws.display());
         let result = check_path(&p, Some(&sess));
         assert!(
             matches!(result, PathDecision::Deny(_)),
@@ -568,7 +568,7 @@ mod tests {
         // Worktree from a previous/other session should still be writable
         let paths = [
             format!("{}/.github/.worktrees/sentinel/.qlty/qlty.toml", ws_str),
-            format!("{}/my-app/.worktrees/other-session/app/main.py", ws_str),
+            format!("{}/web-app/.worktrees/other-session/app/main.py", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -716,9 +716,9 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Writing to <repo>/.agents/ should be allowed (not redirected to worktree)
         let paths = [
-            format!("{}/ml-upsell/.agents/learnings/test.md", ws_str),
-            format!("{}/my-app/.agents/handoff/test.md", ws_str),
-            format!("{}/ml-upsell/.agents/council/report.md", ws_str),
+            format!("{}/ml-pipeline/.agents/learnings/test.md", ws_str),
+            format!("{}/web-app/.agents/handoff/test.md", ws_str),
+            format!("{}/ml-pipeline/.agents/council/report.md", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -738,9 +738,9 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Per-repo CLAUDE.md and AGENTS.md should be allowed (not redirected)
         let paths = [
-            format!("{}/ml-upsell/CLAUDE.md", ws_str),
-            format!("{}/my-app/AGENTS.md", ws_str),
-            format!("{}/cuboh-core/.claude/hooks/test.rs", ws_str),
+            format!("{}/ml-pipeline/CLAUDE.md", ws_str),
+            format!("{}/web-app/AGENTS.md", ws_str),
+            format!("{}/api-server/.claude/hooks/test.rs", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -763,19 +763,19 @@ mod tests {
         let paths = [
             // .agents/
             format!(
-                "{}/ml-upsell/.worktrees/abc12345/.agents/learnings/test.md",
+                "{}/ml-pipeline/.worktrees/abc12345/.agents/learnings/test.md",
                 ws_str
             ),
             format!(
-                "{}/my-app/.worktrees/xyz99999/.agents/handoff/notes.md",
+                "{}/web-app/.worktrees/xyz99999/.agents/handoff/notes.md",
                 ws_str
             ),
             // CLAUDE.md / AGENTS.md
-            format!("{}/ml-upsell/.worktrees/abc12345/CLAUDE.md", ws_str),
-            format!("{}/my-app/.worktrees/xyz99999/AGENTS.md", ws_str),
+            format!("{}/ml-pipeline/.worktrees/abc12345/CLAUDE.md", ws_str),
+            format!("{}/web-app/.worktrees/xyz99999/AGENTS.md", ws_str),
             // .claude/
             format!(
-                "{}/ml-upsell/.worktrees/abc12345/.claude/hooks/test.rs",
+                "{}/ml-pipeline/.worktrees/abc12345/.claude/hooks/test.rs",
                 ws_str
             ),
         ];
@@ -812,8 +812,8 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Regular worktree files should still be allowed (not redirected)
         let paths = [
-            format!("{}/ml-upsell/.worktrees/abc12345/dags/train.py", ws_str),
-            format!("{}/my-app/.worktrees/abc12345/app/main.py", ws_str),
+            format!("{}/ml-pipeline/.worktrees/abc12345/dags/train.py", ws_str),
+            format!("{}/web-app/.worktrees/abc12345/app/main.py", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));

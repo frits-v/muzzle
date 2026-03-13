@@ -1,4 +1,4 @@
-# claude-hooks
+# muzzle
 
 Session isolation hooks for [Claude Code](https://claude.ai/code). Enforces
 workspace sandboxing, git safety, and worktree-based session isolation so

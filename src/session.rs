@@ -442,19 +442,19 @@ mod tests {
 
     #[test]
     fn test_spec_file_read_write() {
-        let tmp = std::env::temp_dir().join("hooks-v3-test-spec");
+        let tmp = std::env::temp_dir().join("muzzle-test-spec");
         let _ = fs::create_dir_all(&tmp);
         let spec_path = tmp.join("test.env");
 
         let entries = vec![
             SpecEntry {
-                repo: "my-app".into(),
+                repo: "web-app".into(),
                 branch: "wt/abc12345".into(),
                 wt_path: "/path/to/wt".into(),
                 repo_path: "/path/to/repo".into(),
             },
             SpecEntry {
-                repo: "cuboh-core".into(),
+                repo: "api-server".into(),
                 branch: "feature/test".into(),
                 wt_path: "/path/to/wt2".into(),
                 repo_path: "/path/to/repo2".into(),
@@ -465,9 +465,9 @@ mod tests {
         let read_entries = read_spec_file(&spec_path).expect("read failed");
 
         assert_eq!(read_entries.len(), 2);
-        assert_eq!(read_entries[0].repo, "my-app");
+        assert_eq!(read_entries[0].repo, "web-app");
         assert_eq!(read_entries[0].branch, "wt/abc12345");
-        assert_eq!(read_entries[1].repo, "cuboh-core");
+        assert_eq!(read_entries[1].repo, "api-server");
 
         let _ = fs::remove_file(&spec_path);
         let _ = fs::remove_dir(&tmp);
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_append_spec_entry_to_empty() {
-        let tmp = std::env::temp_dir().join("hooks-v3-test-append");
+        let tmp = std::env::temp_dir().join("muzzle-test-append");
         let _ = fs::create_dir_all(&tmp);
         let spec_path = tmp.join("append-empty.env");
         let _ = fs::remove_file(&spec_path); // ensure clean state
@@ -500,16 +500,16 @@ mod tests {
 
     #[test]
     fn test_append_spec_entry_to_existing() {
-        let tmp = std::env::temp_dir().join("hooks-v3-test-append2");
+        let tmp = std::env::temp_dir().join("muzzle-test-append2");
         let _ = fs::create_dir_all(&tmp);
         let spec_path = tmp.join("append-existing.env");
 
         // Write initial entry
         let entries = vec![SpecEntry {
-            repo: "my-app".into(),
+            repo: "web-app".into(),
             branch: "wt/abc12345".into(),
-            wt_path: "/path/to/hermosa/wt".into(),
-            repo_path: "/path/to/hermosa".into(),
+            wt_path: "/path/to/web-app/wt".into(),
+            repo_path: "/path/to/web-app".into(),
         }];
         write_spec_file(&spec_path, &entries).expect("initial write failed");
 
@@ -524,7 +524,7 @@ mod tests {
 
         let result = read_spec_file(&spec_path).expect("read failed");
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].repo, "my-app");
+        assert_eq!(result[0].repo, "web-app");
         assert_eq!(result[1].repo, "ops");
 
         let _ = fs::remove_file(&spec_path);
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_append_spec_entry_idempotent() {
-        let tmp = std::env::temp_dir().join("hooks-v3-test-append3");
+        let tmp = std::env::temp_dir().join("muzzle-test-append3");
         let _ = fs::create_dir_all(&tmp);
         let spec_path = tmp.join("append-idem.env");
 

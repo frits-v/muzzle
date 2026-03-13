@@ -8,11 +8,11 @@
 //! Atlassian rate limiting is handled separately via mcp::check_atlassian_rate_limit()
 //! which only writes to .claude-tmp/ (acceptable scratch space).
 
-use hooks_v3::gitcheck;
-use hooks_v3::mcp;
-use hooks_v3::output::Decision;
-use hooks_v3::sandbox;
-use hooks_v3::session;
+use muzzle::gitcheck;
+use muzzle::mcp;
+use muzzle::output::Decision;
+use muzzle::sandbox;
+use muzzle::session;
 use serde::Deserialize;
 use std::io::{self, Read};
 
@@ -181,7 +181,7 @@ fn check_bash(input: &HookInput) -> Decision {
             && !gitcheck::is_worktree_management_op(&bi.command)
         {
             if let Some(repo) = gitcheck::extract_repo_from_git_op(&bi.command) {
-                return Decision::Deny(hooks_v3::worktree_missing_msg(&repo));
+                return Decision::Deny(muzzle::worktree_missing_msg(&repo));
             }
             return Decision::Deny(
                 "BLOCKED: No worktree for this session. \
