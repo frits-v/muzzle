@@ -35,6 +35,12 @@ install: release
 DEPLOY_TARGET ?= $(HOME)/.local/share/muzzle
 
 deploy: release
+	@if [ -n "$$(git status --porcelain -- src/ Cargo.toml Cargo.lock Makefile)" ]; then \
+		echo "ERROR: Uncommitted changes in tracked build files."; \
+		echo "Commit or stash before deploying."; \
+		git status --short -- src/ Cargo.toml Cargo.lock Makefile; \
+		exit 1; \
+	fi
 	@echo "Deploying to $(DEPLOY_TARGET)/"
 	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/src
 	@# Binaries
