@@ -196,10 +196,7 @@ pub fn check_worktree_enforcement(
                 let repo = extract_repo_name(git_path, &ws_str);
                 let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
                 if !std::path::Path::new(&wt_dir).exists() {
-                    return Some(format!(
-                        "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                        repo, repo
-                    ));
+                    return Some(crate::worktree_missing_msg(&repo));
                 }
                 return Some(format!(
                     "BLOCKED: Git op on main checkout ({}). Use worktree: {}/{}/.worktrees/{}",
@@ -219,10 +216,7 @@ pub fn check_worktree_enforcement(
                 let repo = extract_repo_name(cd_path, &ws_str);
                 let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
                 if !std::path::Path::new(&wt_dir).exists() {
-                    return Some(format!(
-                        "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                        repo, repo
-                    ));
+                    return Some(crate::worktree_missing_msg(&repo));
                 }
                 return Some(format!(
                     "BLOCKED: Git op on main checkout ({}). Use worktree: {}/{}/.worktrees/{}",

@@ -145,10 +145,7 @@ pub fn check_path_with_context(
                     let repo = extract_repo(&resolved, &ws_str);
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, sess.short_id);
                     if !repo.is_empty() && !Path::new(&wt_dir).exists() {
-                        return PathDecision::Deny(format!(
-                            "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                            repo, repo
-                        ));
+                        return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     let rel = extract_rel_path(&resolved, &repo, &ws_str);
                     return PathDecision::Deny(format!(
@@ -184,10 +181,7 @@ pub fn check_path_with_context(
                     // FR-WE-2: Return WORKTREE_MISSING with repo name for lazy creation
                     let repo = extract_repo(&resolved, &ws_str);
                     if !repo.is_empty() {
-                        return PathDecision::Deny(format!(
-                            "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                            repo, repo
-                        ));
+                        return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     return PathDecision::Deny(
                         "BLOCKED: No worktree for this session. All repo writes are blocked to prevent editing the main checkout.".into(),
