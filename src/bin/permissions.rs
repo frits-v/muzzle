@@ -181,10 +181,7 @@ fn check_bash(input: &HookInput) -> Decision {
             && !gitcheck::is_worktree_management_op(&bi.command)
         {
             if let Some(repo) = gitcheck::extract_repo_from_git_op(&bi.command) {
-                return Decision::Deny(format!(
-                    "WORKTREE_MISSING:{} — Run: .claude/hooks/bin/ensure-worktree {}",
-                    repo, repo
-                ));
+                return Decision::Deny(hooks_v3::worktree_missing_msg(&repo));
             }
             return Decision::Deny(
                 "BLOCKED: No worktree for this session. \
