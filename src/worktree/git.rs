@@ -20,6 +20,7 @@ pub fn run_git_strings(args: &[String]) -> Result<(), String> {
 fn run_git_generic(args: &[&str]) -> Result<(), String> {
     let status = Command::new("git")
         .args(args)
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .status()
         .map_err(|e| format!("failed to run git: {}", e))?;

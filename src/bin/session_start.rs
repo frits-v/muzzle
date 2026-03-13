@@ -117,8 +117,10 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
             ),
         );
         eprintln!("muzzle/session-start: {}", result.error);
-        println!("\nWARNING: Worktree creation failed. All repo writes will be blocked.");
-        println!("Error: {}", result.error);
+        emit_context(&format!(
+            "\nWARNING: Worktree creation failed. All repo writes will be blocked.\nError: {}",
+            result.error
+        ));
         return;
     }
 
@@ -209,14 +211,25 @@ fn output_worktree_paths(entries: &[SpecEntry]) {
     if entries.is_empty() {
         return;
     }
-    println!();
-    println!("Active worktrees for this session:");
+    let mut text = String::from("\nActive worktrees for this session:\n");
     for e in entries {
-        println!("  {}: {} (branch: {})", e.repo, e.wt_path, e.branch);
+        text.push_str(&format!("  {}: {} (branch: {})\n", e.repo, e.wt_path, e.branch));
     }
-    println!();
-    println!("Use these worktree paths for ALL file operations (reads, writes, git commands).");
-    println!("Do NOT use the main checkout directly — use the worktree path above.");
+    text.push_str("\nUse these worktree paths for ALL file operations (reads, writes, git commands).\n");
+    text.push_str("Do NOT use the main checkout directly — use the worktree path above.");
+    emit_context(&text);
+}
+
+/// Emit text as JSON hookSpecificOutput.additionalContext to stdout.
+/// Claude Code injects this as a system-reminder in the session context.
+fn emit_context(text: &str) {
+    let output = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": text
+        }
+    });
+    println!("{}", output);
 }
 
 fn update_symlink(session_id: &str) {
