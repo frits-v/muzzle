@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration release install clean lint fmt check
+.PHONY: build test test-unit test-integration release install deploy clean lint fmt check
 
 # Default target
 all: check test build
@@ -29,6 +29,23 @@ install: release
 		cp target/release/$$b bin/$$b; \
 		echo "  installed bin/$$b"; \
 	done
+
+# Deploy release binaries + source to ~/src/cn/.claude/hooks/
+DEPLOY_TARGET ?= $(HOME)/src/cn/.claude/hooks
+
+deploy: release
+	@echo "Deploying to $(DEPLOY_TARGET)/"
+	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/src
+	@# Binaries
+	@for b in session-start permissions changelog session-end ensure-worktree; do \
+		cp target/release/$$b $(DEPLOY_TARGET)/bin/$$b; \
+		echo "  bin/$$b"; \
+	done
+	@# Source + build files (for future builds in-place)
+	@rsync -a --delete --exclude='target/' --exclude='.git/' --exclude='.agents/' \
+		src/ $(DEPLOY_TARGET)/src/
+	@cp Cargo.toml Cargo.lock $(DEPLOY_TARGET)/ 2>/dev/null || cp Cargo.toml $(DEPLOY_TARGET)/
+	@echo "Deployed to $(DEPLOY_TARGET)/"
 
 # Lint
 lint:
