@@ -253,12 +253,30 @@ pub fn write_spec_file(path: &Path, entries: &[SpecEntry]) -> Result<(), Session
     Ok(())
 }
 
-/// Append a spec entry to the spec file (idempotent).
+/// Append a spec entry to the spec file (idempotent, flock-protected).
 ///
 /// If the repo already has an entry, skips it. Otherwise appends the new entry.
-/// Used by `ensure-worktree` to register lazily-created worktrees.
+/// Uses POSIX flock(LOCK_EX) to prevent concurrent ensure-worktree calls from
+/// losing each other's writes (read-modify-write race).
 pub fn append_spec_entry(path: &Path, entry: &SpecEntry) -> Result<(), SessionError> {
-    // Read existing entries (empty vec if file doesn't exist)
+    let lock_path = path.with_extension("lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(SessionError::Io)?;
+
+    flock_exclusive(&lock_file)?;
+
+    let result = append_spec_entry_inner(path, entry);
+
+    // Unlock (also happens on drop, but explicit is clearer)
+    flock_unlock(&lock_file);
+    result
+}
+
+fn append_spec_entry_inner(path: &Path, entry: &SpecEntry) -> Result<(), SessionError> {
     let mut entries = match read_spec_file(path) {
         Ok(e) => e,
         Err(SessionError::Io(ref io_err)) if io_err.kind() == io::ErrorKind::NotFound => Vec::new(),
@@ -272,6 +290,26 @@ pub fn append_spec_entry(path: &Path, entry: &SpecEntry) -> Result<(), SessionEr
 
     entries.push(entry.clone());
     write_spec_file(path, &entries)
+}
+
+/// Acquire an exclusive POSIX flock on the given file.
+fn flock_exclusive(file: &fs::File) -> Result<(), SessionError> {
+    use std::os::unix::io::AsRawFd;
+    let fd = file.as_raw_fd();
+    let ret = unsafe { libc::flock(fd, libc::LOCK_EX) };
+    if ret != 0 {
+        return Err(SessionError::Io(io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+/// Release a POSIX flock on the given file.
+fn flock_unlock(file: &fs::File) {
+    use std::os::unix::io::AsRawFd;
+    let fd = file.as_raw_fd();
+    unsafe {
+        libc::flock(fd, libc::LOCK_UN);
+    }
 }
 
 /// Check if the spec file exists and has content.
@@ -456,6 +494,7 @@ mod tests {
         assert_eq!(entries[0].repo, "ops");
 
         let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_file(spec_path.with_extension("lock"));
         let _ = fs::remove_dir(&tmp);
     }
 
@@ -489,6 +528,7 @@ mod tests {
         assert_eq!(result[1].repo, "ops");
 
         let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_file(spec_path.with_extension("lock"));
         let _ = fs::remove_dir(&tmp);
     }
 
@@ -512,6 +552,7 @@ mod tests {
         assert_eq!(result.len(), 1, "idempotent append should not duplicate");
 
         let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_file(spec_path.with_extension("lock"));
         let _ = fs::remove_dir(&tmp);
     }
 
