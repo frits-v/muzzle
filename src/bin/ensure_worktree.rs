@@ -10,8 +10,8 @@
 //!   0 — success (worktree path on stdout)
 //!   1 — error (message on stderr)
 
-use hooks_v3::session;
-use hooks_v3::worktree;
+use muzzle::session;
+use muzzle::worktree;
 
 fn main() {
     let result = std::panic::catch_unwind(run);

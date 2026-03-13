@@ -1,8 +1,8 @@
 [package]
-name = "hooks-v3"
+name = "muzzle"
 version = "0.1.0"
 edition = "2021"
-description = "Claude Code session isolation hooks (Rust implementation)"
+description = "Session isolation and workspace sandboxing for AI coding agents"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -12,7 +12,7 @@ flate2 = "1"
 libc = "0.2"
 
 [lib]
-name = "hooks_v3"
+name = "muzzle"
 path = "src/lib.rs"
 
 [[bin]]

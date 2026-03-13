@@ -9,9 +9,9 @@
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use hooks_v3::config;
-use hooks_v3::session::{self, SpecEntry, State};
-use hooks_v3::worktree;
+use muzzle::config;
+use muzzle::session::{self, SpecEntry, State};
+use muzzle::worktree;
 use serde::Deserialize;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -33,7 +33,7 @@ fn main() {
 }
 
 fn run() {
-    // Skip for non-cn workspaces
+    // Skip when not running inside the configured workspace
     if !config::is_in_workspace() {
         std::process::exit(0);
     }
@@ -41,14 +41,14 @@ fn run() {
     // Read hook input from stdin
     let mut data = String::new();
     if let Err(e) = io::stdin().read_to_string(&mut data) {
-        eprintln!("hooks-v3/session-start: failed to read stdin: {}", e);
+        eprintln!("muzzle/session-start: failed to read stdin: {}", e);
         std::process::exit(1);
     }
 
     let input: HookInput = match serde_json::from_str(&data) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("hooks-v3/session-start: failed to parse JSON: {}", e);
+            eprintln!("muzzle/session-start: failed to parse JSON: {}", e);
             std::process::exit(1);
         }
     };
@@ -62,13 +62,13 @@ fn run() {
 
     // Register PID marker (all sources)
     if let Err(e) = session::register_pid(&session_id) {
-        eprintln!("hooks-v3/session-start: failed to register PID: {}", e);
+        eprintln!("muzzle/session-start: failed to register PID: {}", e);
         // Non-fatal: continue even if PID registration fails
     }
 
     // Ensure session temp dir exists
     if let Err(e) = fs::create_dir_all(&sess.tmp_dir) {
-        eprintln!("hooks-v3/session-start: failed to create temp dir: {}", e);
+        eprintln!("muzzle/session-start: failed to create temp dir: {}", e);
     }
 
     match source.as_str() {
@@ -99,7 +99,7 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
     // Create fresh changelog
     let header = format!("## Session: {} ({})\n\n", timestamp, sess.id);
     if let Err(e) = fs::write(&sess.changelog_path, &header) {
-        eprintln!("hooks-v3/session-start: failed to create changelog: {}", e);
+        eprintln!("muzzle/session-start: failed to create changelog: {}", e);
     }
 
     // Update convenience symlink
@@ -116,7 +116,7 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
                 result.error
             ),
         );
-        eprintln!("hooks-v3/session-start: {}", result.error);
+        eprintln!("muzzle/session-start: {}", result.error);
         println!("\nWARNING: Worktree creation failed. All repo writes will be blocked.");
         println!("Error: {}", result.error);
         return;
@@ -125,7 +125,7 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
     if !result.entries.is_empty() {
         // Save spec file
         if let Err(e) = session::write_spec_file(&sess.spec_file, &result.entries) {
-            eprintln!("hooks-v3/session-start: failed to save spec file: {}", e);
+            eprintln!("muzzle/session-start: failed to save spec file: {}", e);
         }
         // Refresh worktree state
         sess.worktree_active = true;
@@ -216,7 +216,7 @@ fn output_worktree_paths(entries: &[SpecEntry]) {
     }
     println!();
     println!("Use these worktree paths for ALL file operations (reads, writes, git commands).");
-    println!("Do NOT use ~/src/cn/<repo>/ directly — use the worktree path above.");
+    println!("Do NOT use the main checkout directly — use the worktree path above.");
 }
 
 fn update_symlink(session_id: &str) {

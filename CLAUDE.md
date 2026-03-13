@@ -1,4 +1,4 @@
-# CLAUDE.md — claude-hooks
+# CLAUDE.md — muzzle
 
 Session isolation hooks for Claude Code. Rust implementation producing 5 binaries
 that enforce workspace sandboxing, git safety, and worktree-based session isolation.
@@ -8,7 +8,7 @@ that enforce workspace sandboxing, git safety, and worktree-based session isolat
 ```
 src/
   lib.rs              # Library root (re-exports all modules)
-  config.rs           # Constants, path helpers ($HOME/src/cn workspace)
+  config.rs           # Constants, path helpers (MUZZLE_WORKSPACE or $HOME/src)
   session.rs          # Session ID resolution via PPID walk + spec file I/O
   sandbox.rs          # Path sandboxing (7 rules + worktree enforcement)
   gitcheck.rs         # 8 git safety regex patterns + worktree enforcement

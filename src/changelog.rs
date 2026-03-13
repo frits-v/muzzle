@@ -715,7 +715,7 @@ mod tests {
         let entry = format_entry(
             "mcp__github__create_pull_request",
             &InputFields {
-                repo: "ChowNow/Hermosa".into(),
+                repo: "Org/Project".into(),
                 title: "Fix bug".into(),
                 ..Default::default()
             },
@@ -733,7 +733,7 @@ mod tests {
         let entry = format_entry(
             "mcp__claude_ai_Atlassian__createJiraIssue",
             &InputFields {
-                project_key: "CN".into(),
+                project_key: "PRJ".into(),
                 summary: "New ticket".into(),
                 ..Default::default()
             },
@@ -744,7 +744,7 @@ mod tests {
             "expected Jira Issue marker in: {}",
             entry
         );
-        assert!(entry.contains("CN"), "expected project key in: {}", entry);
+        assert!(entry.contains("PRJ"), "expected project key in: {}", entry);
     }
 
     #[test]

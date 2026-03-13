@@ -4,9 +4,9 @@
 //! No stdout. Writes to .claude-changelog-<session-id>.md
 //! Skips read-only tools (FR-AL-2).
 
-use hooks_v3::changelog::{self, InputFields, OutputFields, ToolInput};
-use hooks_v3::config;
-use hooks_v3::session;
+use muzzle::changelog::{self, InputFields, OutputFields, ToolInput};
+use muzzle::config;
+use muzzle::session;
 use std::io::{self, Read};
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
 }
 
 fn run() {
-    // Skip for non-cn workspaces
+    // Skip when not running inside the configured workspace
     if !config::is_in_workspace() {
         std::process::exit(0);
     }

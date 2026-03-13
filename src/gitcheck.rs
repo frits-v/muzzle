@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn test_worktree_enforcement_main_checkout_deny() {
         let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/Hermosa status", ws.display());
+        let cmd = format!("git -C {}/web-app status", ws.display());
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
         assert!(reason.is_some(), "expected deny for git on main checkout");
     }
@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn test_worktree_enforcement_worktree_allow() {
         let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/Hermosa/.worktrees/abc12345 status", ws.display());
+        let cmd = format!("git -C {}/web-app/.worktrees/abc12345 status", ws.display());
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
         assert!(
             reason.is_none(),
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn test_worktree_enforcement_worktree_management() {
         let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/Hermosa worktree add /path", ws.display());
+        let cmd = format!("git -C {}/web-app worktree add /path", ws.display());
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
         assert!(
             reason.is_none(),
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_worktree_enforcement_not_active() {
         let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/Hermosa status", ws.display());
+        let cmd = format!("git -C {}/web-app status", ws.display());
         let reason = check_worktree_enforcement(&cmd, false, "abc12345");
         assert!(reason.is_none(), "expected no enforcement when inactive");
     }
@@ -639,12 +639,12 @@ mod tests {
     #[test]
     fn test_extract_repo_from_git_op_git_c() {
         let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/Hermosa status", ws.display());
+        let cmd = format!("git -C {}/web-app status", ws.display());
         let repo = extract_repo_from_git_op(&cmd);
         assert_eq!(
             repo.as_deref(),
-            Some("Hermosa"),
-            "should extract Hermosa from git -C"
+            Some("web-app"),
+            "should extract web-app from git -C"
         );
     }
 

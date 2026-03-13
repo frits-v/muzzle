@@ -18,3 +18,7 @@ Thumbs.db
 .claude-trace*
 .claude-worktrees*
 .claude-tmp/
+
+
+# Session artifacts
+.agents/

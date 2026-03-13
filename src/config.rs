@@ -1,4 +1,4 @@
-//! Constants, path helpers, and shared configuration for hooks-v3.
+//! Constants, path helpers, and shared configuration for muzzle.
 //!
 //! Home and Workspace are resolved at runtime from the environment.
 //! Not hardcoded — the compiled binary works on any machine.
@@ -50,9 +50,47 @@ fn dirs_fallback() -> Option<PathBuf> {
     None
 }
 
-/// Resolve the workspace path: $HOME/src/cn
+/// Config file path: `~/.config/muzzle/config`.
+pub fn config_file() -> PathBuf {
+    home().join(".config").join("muzzle").join("config")
+}
+
+/// Read a key from the config file (simple `key = value` format).
+fn read_config_key(key: &str) -> Option<String> {
+    let content = std::fs::read_to_string(config_file()).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                let v = v.trim();
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve the workspace path.
+///
+/// Resolution order:
+/// 1. `MUZZLE_WORKSPACE` env var
+/// 2. `workspace` key in `~/.config/muzzle/config`
+/// 3. `$HOME/src` default
 pub fn workspace() -> PathBuf {
-    home().join("src").join("cn")
+    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
+        if !ws.is_empty() {
+            return PathBuf::from(ws);
+        }
+    }
+    if let Some(ws) = read_config_key("workspace") {
+        return PathBuf::from(ws);
+    }
+    home().join("src")
 }
 
 /// PID marker file path for a given PID.
@@ -173,7 +211,7 @@ mod tests {
     #[test]
     fn test_is_under() {
         let ws = workspace();
-        assert!(is_under(&ws.join("Hermosa/app.py"), &ws));
+        assert!(is_under(&ws.join("web-app/app.py"), &ws));
         assert!(is_under(&ws, &ws));
         assert!(is_under(&PathBuf::from(format!("{}/", ws.display())), &ws));
         assert!(!is_under(&PathBuf::from(format!("{}x", ws.display())), &ws));

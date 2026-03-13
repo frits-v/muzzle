@@ -30,8 +30,9 @@ install: release
 		echo "  installed bin/$$b"; \
 	done
 
-# Deploy release binaries + source to ~/src/cn/.claude/hooks/
-DEPLOY_TARGET ?= $(HOME)/src/cn/.claude/hooks
+# Deploy release binaries to target directory.
+# Override with: make deploy DEPLOY_TARGET=/path/to/hooks
+DEPLOY_TARGET ?= $(HOME)/.local/share/muzzle
 
 deploy: release
 	@echo "Deploying to $(DEPLOY_TARGET)/"

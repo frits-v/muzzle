@@ -8,6 +8,38 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Resolve the workspace path the same way the binary does.
+///
+/// 1. MUZZLE_WORKSPACE env var
+/// 2. `workspace` key in ~/.config/muzzle/config
+/// 3. $HOME/src default
+fn test_workspace() -> String {
+    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
+        if !ws.is_empty() {
+            return ws;
+        }
+    }
+    let home = std::env::var("HOME").expect("HOME not set");
+    let config_path = format!("{}/.config/muzzle/config", home);
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                if k.trim() == "workspace" {
+                    let v = v.trim();
+                    if !v.is_empty() {
+                        return v.to_string();
+                    }
+                }
+            }
+        }
+    }
+    format!("{}/src", home)
+}
+
 /// Helper: run a binary with JSON on stdin, return (stdout, stderr, exit_code).
 fn run_binary(name: &str, json_input: &str) -> (String, String, i32) {
     let binary = format!("target/debug/{}", name);
@@ -175,8 +207,7 @@ impl Drop for TestSessionGuard {
 /// Writes a PID marker for the current process (which is the PPID of any
 /// child processes we spawn) and returns a guard that cleans up on drop.
 fn setup_fake_session(session_id: &str) -> TestSessionGuard {
-    let home = std::env::var("HOME").expect("HOME not set");
-    let workspace = format!("{}/src/cn", home);
+    let workspace = test_workspace();
 
     let pid = std::process::id();
     let marker_dir = format!("{}/.claude-tmp/by-pid", workspace);
@@ -202,8 +233,7 @@ fn test_permissions_worktree_missing_bash_git_op() {
     let _guard = setup_fake_session("test-wt-missing-00000001");
 
     // No spec file → worktree_active=false → FR-WE-2 path
-    let home = std::env::var("HOME").unwrap();
-    let cmd = format!("git -C {}/src/cn/ops status", home);
+    let cmd = format!("git -C {}/ops status", test_workspace());
     let input = format!(
         r#"{{"tool_name":"Bash","tool_input":{{"command":"{}"}}}}"#,
         cmd
@@ -229,8 +259,7 @@ fn test_permissions_worktree_missing_write_to_repo() {
     let _guard = setup_fake_session("test-wt-missing-00000002");
 
     // No spec file → worktree_active=false → FR-WE-2 path
-    let home = std::env::var("HOME").unwrap();
-    let file_path = format!("{}/src/cn/ops/main.tf", home);
+    let file_path = format!("{}/ops/main.tf", test_workspace());
     let input = format!(
         r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}"}}}}"#,
         file_path
@@ -254,13 +283,12 @@ fn test_permissions_worktree_missing_with_active_session() {
     // then test write to a DIFFERENT repo that has no worktree dir.
     std::fs::write(
         &guard.spec_path,
-        "Hermosa|wt/test-wt-m|/fake/wt/path|/fake/repo/path\n",
+        "web-app|wt/test-wt-m|/fake/wt/path|/fake/repo/path\n",
     )
     .expect("write spec");
 
     // Now Write to "ops" — which has no .worktrees/test-wt-m/ dir
-    let home = std::env::var("HOME").unwrap();
-    let file_path = format!("{}/src/cn/ops/main.tf", home);
+    let file_path = format!("{}/ops/main.tf", test_workspace());
     let input = format!(
         r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}"}}}}"#,
         file_path
