@@ -14,6 +14,17 @@ use hooks_v3::session;
 use hooks_v3::worktree;
 
 fn main() {
+    let result = std::panic::catch_unwind(run);
+    match result {
+        Ok(()) => {}
+        Err(_) => {
+            eprintln!("ERROR: ensure-worktree panicked — aborting for safety");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 || args[1].is_empty() {
         eprintln!("Usage: ensure-worktree <repo-name>");
@@ -25,7 +36,10 @@ fn main() {
     // Resolve session (read-write mode — this binary is invoked as a Bash command)
     let sess = session::resolve();
     if !sess.has_session() {
-        eprintln!("ERROR: No active session found. ensure-worktree must run inside a Claude Code session.");
+        eprintln!(
+            "ERROR: No active session found. \
+             ensure-worktree must run inside a Claude Code session."
+        );
         std::process::exit(1);
     }
 
