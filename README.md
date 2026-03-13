@@ -24,6 +24,13 @@ Five Rust binaries that plug into Claude Code's hook system:
 - **Panic = deny**: Hooks never fail open on crash
 - **Config persistence**: `.agents/`, `CLAUDE.md` always go to main checkout
 
+## Prerequisites
+
+```bash
+# Install Rust via mise
+mise use -g rust@latest
+```
+
 ## Quick Start
 
 ```bash
