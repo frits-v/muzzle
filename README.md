@@ -18,6 +18,13 @@ Five Rust binaries that plug into Claude Code's hook system:
 
 ## Setup
 
+### Prerequisites
+
+```bash
+# Install Rust via mise (or any method that gives you cargo)
+mise use -g rust@latest
+```
+
 ### 1. Build and deploy
 
 ```bash
