@@ -18,14 +18,17 @@ Fitness goals for claude-hooks — session isolation hooks for Claude Code.
 
 ### 1. Close tech-debt from initial post-mortem
 
-4 open items: shared WORKTREE_MISSING constant, append_spec_entry locking,
-WORKTREE_MISSING integration tests, catch_unwind in ensure-worktree.
+All 4 items resolved:
+- [x] Shared WORKTREE_MISSING constant (worktree_missing_msg in lib.rs)
+- [x] Advisory lock on append_spec_entry (flock via libc)
+- [x] WORKTREE_MISSING integration tests (3 new tests)
+- [x] catch_unwind in ensure-worktree binary
 
-**Steer:** increase
+**Steer:** complete
 
 ### 2. Maintain test coverage above 100 tests
 
-Current: 113 tests (103 unit + 10 integration). Do not regress.
+Current: 116 tests (103 unit + 13 integration). Do not regress.
 
 **Steer:** increase
 
