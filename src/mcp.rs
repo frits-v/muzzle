@@ -61,10 +61,7 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
 /// FR-MR-1: GitHub MCP routing.
 fn route_github(action: &str) -> McpDecision {
     // Read-only
-    if action.starts_with("get_")
-        || action.starts_with("list_")
-        || action.starts_with("search_")
-    {
+    if action.starts_with("get_") || action.starts_with("list_") || action.starts_with("search_") {
         return McpDecision::Allow;
     }
 
@@ -255,10 +252,7 @@ fn route_slack(action: &str) -> McpDecision {
 
 /// FR-MR-6: Sysdig MCP routing.
 fn route_sysdig(action: &str) -> McpDecision {
-    if action.starts_with("get_")
-        || action.starts_with("k8s_")
-        || action.starts_with("list_")
-    {
+    if action.starts_with("get_") || action.starts_with("k8s_") || action.starts_with("list_") {
         return McpDecision::Allow;
     }
     McpDecision::Ask(format!(
@@ -351,14 +345,21 @@ mod tests {
         ];
         for tool in &tools {
             let d = route(tool);
-            assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for {}", tool);
+            assert!(
+                matches!(d, McpDecision::Ask(_)),
+                "expected ASK for {}",
+                tool
+            );
         }
     }
 
     #[test]
     fn test_atlassian_create_jira_ask() {
         let d = route("mcp__claude_ai_Atlassian__createJiraIssue");
-        assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for createJiraIssue");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for createJiraIssue"
+        );
     }
 
     // FR-MR-3: Datadog
@@ -385,7 +386,11 @@ mod tests {
         ];
         for tool in &tools {
             let d = route(tool);
-            assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for {}", tool);
+            assert!(
+                matches!(d, McpDecision::Ask(_)),
+                "expected ASK for {}",
+                tool
+            );
         }
     }
 
@@ -408,7 +413,10 @@ mod tests {
     #[test]
     fn test_sentry_unknown_ask() {
         let d = route("mcp__claude_ai_Sentry__delete_issue");
-        assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for unknown Sentry tool");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown Sentry tool"
+        );
     }
 
     // FR-MR-5: Slack
@@ -435,7 +443,11 @@ mod tests {
         ];
         for tool in &tools {
             let d = route(tool);
-            assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for {}", tool);
+            assert!(
+                matches!(d, McpDecision::Ask(_)),
+                "expected ASK for {}",
+                tool
+            );
         }
     }
 
@@ -457,7 +469,10 @@ mod tests {
     #[test]
     fn test_unknown_mcp_ask() {
         let d = route("mcp__unknown_service__do_something");
-        assert!(matches!(d, McpDecision::Ask(_)), "expected ASK for unknown MCP");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown MCP"
+        );
     }
 
     // Non-MCP -> ALLOW
@@ -470,6 +485,9 @@ mod tests {
     // Rate limiting tests
     #[test]
     fn test_atlassian_create_jira_with_session() {
+        // Clean up stale rate files from previous test runs
+        let rate_dir = config::rate_limit_dir("test-rate-limit-session-1");
+        let _ = std::fs::remove_dir_all(&rate_dir);
         // With session ID, should still ASK (first call, not rate limited)
         let d = route_with_session(
             "mcp__claude_ai_Atlassian__createJiraIssue",
@@ -559,7 +577,10 @@ mod tests {
 
         // Only the current call counts (expired entries are filtered out)
         let exceeded = check_atlassian_rate_limit("createJiraIssue", session_id);
-        assert!(!exceeded, "expected rate limit NOT exceeded with expired entries");
+        assert!(
+            !exceeded,
+            "expected rate limit NOT exceeded with expired entries"
+        );
 
         // Cleanup
         let _ = fs::remove_dir_all(&rate_dir);

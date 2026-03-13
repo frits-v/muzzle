@@ -59,7 +59,10 @@ pub fn check_path_with_context(
 
     // FR-PS-1: System paths — check BEFORE resolving symlinks
     if is_system_path(&path_str) {
-        return PathDecision::Deny(format!("BLOCKED: Cannot write to system path: {}", raw_path));
+        return PathDecision::Deny(format!(
+            "BLOCKED: Cannot write to system path: {}",
+            raw_path
+        ));
     }
 
     // Resolve to absolute (follow symlinks)
@@ -67,7 +70,10 @@ pub fn check_path_with_context(
 
     // System paths check on resolved path (catches /private/etc, /private/var on macOS)
     if is_system_path(&resolved) || is_private_system_path(&resolved) {
-        return PathDecision::Deny(format!("BLOCKED: Cannot write to system path: {}", raw_path));
+        return PathDecision::Deny(format!(
+            "BLOCKED: Cannot write to system path: {}",
+            raw_path
+        ));
     }
 
     // FR-PS-3: Temp directory
@@ -104,7 +110,7 @@ pub fn check_path_with_context(
                     const WORKTREES_SEG: &str = "/.worktrees/";
                     if let Some(wt_idx) = resolved.find(WORKTREES_SEG) {
                         let after_wt = &resolved[wt_idx..]; // "/.worktrees/<id>/..."
-                        // Find the slash after the worktree ID
+                                                            // Find the slash after the worktree ID
                         if let Some(id_slash) = after_wt[WORKTREES_SEG.len()..].find('/') {
                             let after_id = &after_wt[WORKTREES_SEG.len() + id_slash..]; // "/..." after ID
                             if is_persistent_repo_config(after_id) {
@@ -262,7 +268,14 @@ pub fn is_system_path_resolved(raw_path: &str) -> bool {
 /// Check if a path is a system path.
 fn is_system_path(path: &str) -> bool {
     let prefixes = [
-        "/etc/", "/usr/", "/System/", "/Library/", "/bin/", "/sbin/", "/var/", "/opt/",
+        "/etc/",
+        "/usr/",
+        "/System/",
+        "/Library/",
+        "/bin/",
+        "/sbin/",
+        "/var/",
+        "/opt/",
     ];
     for p in &prefixes {
         if path.starts_with(p) {
@@ -349,10 +362,7 @@ fn is_dangerous_dotfile(path: &str, home: &str) -> bool {
         }
     }
 
-    let dangerous_dirs = [
-        format!("{}/.ssh/", home),
-        format!("{}/.aws/", home),
-    ];
+    let dangerous_dirs = [format!("{}/.ssh/", home), format!("{}/.aws/", home)];
     for d in &dangerous_dirs {
         if path.starts_with(d) {
             return true;
@@ -767,14 +777,8 @@ mod tests {
                 ws_str
             ),
             // CLAUDE.md / AGENTS.md
-            format!(
-                "{}/ml-upsell/.worktrees/abc12345/CLAUDE.md",
-                ws_str
-            ),
-            format!(
-                "{}/Hermosa/.worktrees/xyz99999/AGENTS.md",
-                ws_str
-            ),
+            format!("{}/ml-upsell/.worktrees/abc12345/CLAUDE.md", ws_str),
+            format!("{}/Hermosa/.worktrees/xyz99999/AGENTS.md", ws_str),
             // .claude/
             format!(
                 "{}/ml-upsell/.worktrees/abc12345/.claude/hooks/test.rs",
@@ -793,7 +797,8 @@ mod tests {
                 assert!(
                     msg.contains("REDIRECT"),
                     "expected REDIRECT message for {:?}, got: {}",
-                    p, msg
+                    p,
+                    msg
                 );
                 // Ensure the redirect target does NOT contain /.worktrees/
                 let target = msg.split("Write to: ").nth(1).unwrap_or("");

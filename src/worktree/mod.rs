@@ -84,7 +84,11 @@ fn create_from_env(sess: &State, env_specs: &str) -> CreateResult {
 
         let repo_path = config::workspace().join(repo);
         if !git::is_git_repo(&repo_path) {
-            eprintln!("WARN: Skipping {} — not a git repo at {}", repo, repo_path.display());
+            eprintln!(
+                "WARN: Skipping {} — not a git repo at {}",
+                repo,
+                repo_path.display()
+            );
             continue;
         }
 
@@ -127,7 +131,9 @@ fn create_auto_sandbox(sess: &State) -> CreateResult {
 
     while config::is_under(&check_dir, &workspace) && check_dir != workspace {
         if git::is_git_repo(&check_dir) {
-            auto_repo = check_dir.file_name().map(|n| n.to_string_lossy().to_string());
+            auto_repo = check_dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string());
             break;
         }
         check_dir = match check_dir.parent() {
@@ -175,8 +181,12 @@ fn create_single_worktree(
             // No branch specified: create ephemeral wt/<short-id>
             let br = format!("wt/{}", sess.short_id);
             let args = vec![
-                "-C".into(), repo_path.to_string_lossy().into(),
-                "worktree".into(), "add".into(), "-b".into(), br.clone(),
+                "-C".into(),
+                repo_path.to_string_lossy().into(),
+                "worktree".into(),
+                "add".into(),
+                "-b".into(),
+                br.clone(),
                 wt_path.to_string_lossy().into(),
                 format!("origin/{}", default_branch),
             ];
@@ -186,8 +196,12 @@ fn create_single_worktree(
             // Default branch requested: redirect to ephemeral (don't lock default)
             let br = format!("wt/{}", sess.short_id);
             let args = vec![
-                "-C".into(), repo_path.to_string_lossy().into(),
-                "worktree".into(), "add".into(), "-b".into(), br.clone(),
+                "-C".into(),
+                repo_path.to_string_lossy().into(),
+                "worktree".into(),
+                "add".into(),
+                "-b".into(),
+                br.clone(),
                 wt_path.to_string_lossy().into(),
                 format!("origin/{}", default_branch),
             ];
@@ -196,8 +210,10 @@ fn create_single_worktree(
         Some(b) if git::branch_exists(repo_path, b) => {
             // Existing branch: check it out
             let args = vec![
-                "-C".into(), repo_path.to_string_lossy().into(),
-                "worktree".into(), "add".into(),
+                "-C".into(),
+                repo_path.to_string_lossy().into(),
+                "worktree".into(),
+                "add".into(),
                 wt_path.to_string_lossy().into(),
                 b.into(),
             ];
@@ -206,8 +222,12 @@ fn create_single_worktree(
         Some(b) => {
             // New branch: create from origin/<default>
             let args = vec![
-                "-C".into(), repo_path.to_string_lossy().into(),
-                "worktree".into(), "add".into(), "-b".into(), b.into(),
+                "-C".into(),
+                repo_path.to_string_lossy().into(),
+                "worktree".into(),
+                "add".into(),
+                "-b".into(),
+                b.into(),
                 wt_path.to_string_lossy().into(),
                 format!("origin/{}", default_branch),
             ];
@@ -271,10 +291,7 @@ pub fn ensure_for_repo(sess: &State, repo: &str) -> Result<SpecEntry, WorktreeEr
 }
 
 /// Restore worktrees from a spec file for session resume.
-pub fn restore_worktrees(
-    sess: &State,
-    entries: &[SpecEntry],
-) -> (Vec<SpecEntry>, Vec<String>) {
+pub fn restore_worktrees(sess: &State, entries: &[SpecEntry]) -> (Vec<SpecEntry>, Vec<String>) {
     let mut restored = Vec::new();
     let mut errors = Vec::new();
 
@@ -308,20 +325,39 @@ pub fn restore_worktrees(
         }
 
         let result = if git::branch_exists(repo_path, &entry.branch) {
-            git::run_git(&["-C", &repo_str, "worktree", "add", &entry.wt_path, &entry.branch])
+            git::run_git(&[
+                "-C",
+                &repo_str,
+                "worktree",
+                "add",
+                &entry.wt_path,
+                &entry.branch,
+            ])
         } else if entry.branch.starts_with("wt/") {
             // Ephemeral branch was deleted — recreate from origin/default
             let default_branch = git::fetch_and_resolve_default_branch(repo_path, &sess.tmp_dir);
             git::run_git(&[
-                "-C", &repo_str, "worktree", "add", "-b", &entry.branch,
-                &entry.wt_path, &format!("origin/{}", default_branch),
+                "-C",
+                &repo_str,
+                "worktree",
+                "add",
+                "-b",
+                &entry.branch,
+                &entry.wt_path,
+                &format!("origin/{}", default_branch),
             ])
         } else {
             // Branch doesn't exist — create from origin/default
             let default_branch = git::fetch_and_resolve_default_branch(repo_path, &sess.tmp_dir);
             git::run_git(&[
-                "-C", &repo_str, "worktree", "add", "-b", &entry.branch,
-                &entry.wt_path, &format!("origin/{}", default_branch),
+                "-C",
+                &repo_str,
+                "worktree",
+                "add",
+                "-b",
+                &entry.branch,
+                &entry.wt_path,
+                &format!("origin/{}", default_branch),
             ])
         };
 

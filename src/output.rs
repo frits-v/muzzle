@@ -78,8 +78,10 @@ mod tests {
         let output = &parsed["hookSpecificOutput"];
         assert_eq!(output["permissionDecision"], "allow");
         assert_eq!(output["hookEventName"], "PreToolUse");
-        assert!(output.get("permissionDecisionReason").is_none()
-            || output["permissionDecisionReason"].is_null());
+        assert!(
+            output.get("permissionDecisionReason").is_none()
+                || output["permissionDecisionReason"].is_null()
+        );
     }
 
     #[test]
@@ -103,7 +105,11 @@ mod tests {
     #[test]
     fn test_json_escaping() {
         let json = Decision::Deny(r#"path with "quotes" and \backslashes"#.into()).to_json();
-        assert!(serde_json::from_str::<serde_json::Value>(&json).is_ok(), "invalid JSON: {}", json);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&json).is_ok(),
+            "invalid JSON: {}",
+            json
+        );
         assert!(json.contains("quotes"));
     }
 }

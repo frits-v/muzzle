@@ -67,17 +67,26 @@ pub fn pid_marker_dir_path() -> PathBuf {
 
 /// Spec file path for a session.
 pub fn spec_file_path(session_id: &str) -> PathBuf {
-    workspace().join(format!("{}{}{}", SPEC_FILE_PREFIX, session_id, SPEC_FILE_SUFFIX))
+    workspace().join(format!(
+        "{}{}{}",
+        SPEC_FILE_PREFIX, session_id, SPEC_FILE_SUFFIX
+    ))
 }
 
 /// Changelog path for a session.
 pub fn changelog_path(session_id: &str) -> PathBuf {
-    workspace().join(format!("{}{}{}", CHANGELOG_PREFIX, session_id, CHANGELOG_SUFFIX))
+    workspace().join(format!(
+        "{}{}{}",
+        CHANGELOG_PREFIX, session_id, CHANGELOG_SUFFIX
+    ))
 }
 
 /// Gzipped changelog path.
 pub fn changelog_gz_path(session_id: &str) -> PathBuf {
-    workspace().join(format!("{}{}{}.gz", CHANGELOG_PREFIX, session_id, CHANGELOG_SUFFIX))
+    workspace().join(format!(
+        "{}{}{}.gz",
+        CHANGELOG_PREFIX, session_id, CHANGELOG_SUFFIX
+    ))
 }
 
 /// Trace log path for a session.

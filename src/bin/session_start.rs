@@ -182,14 +182,12 @@ fn handle_resume(sess: &mut State, timestamp: &str) {
 
 fn handle_clear_compact(sess: &State, source: &str, timestamp: &str) {
     // Ensure changelog exists
-    if !sess.changelog_path.exists() {
-        if !restore_changelog_const(sess) {
-            let header = format!(
-                "## Session: {} ({})\n\n> **Note**: Changelog recreated after {}.\n\n",
-                timestamp, sess.id, source
-            );
-            let _ = fs::write(&sess.changelog_path, &header);
-        }
+    if !sess.changelog_path.exists() && !restore_changelog_const(sess) {
+        let header = format!(
+            "## Session: {} ({})\n\n> **Note**: Changelog recreated after {}.\n\n",
+            timestamp, sess.id, source
+        );
+        let _ = fs::write(&sess.changelog_path, &header);
     }
 
     // Update symlink
@@ -407,7 +405,9 @@ fn clean_stale_dirs(parent_dir: &Path, max_age_days: u64) {
             continue;
         }
         let Ok(meta) = entry.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         if modified < cutoff {
             let _ = fs::remove_dir_all(entry.path());
             count += 1;
@@ -431,7 +431,9 @@ fn clean_stale_files(dir: &Path, max_age_days: u64) {
             continue;
         }
         let Ok(meta) = entry.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         if modified < cutoff {
             let _ = fs::remove_file(entry.path());
             count += 1;
@@ -452,7 +454,9 @@ fn clean_stale_glob(dir: &Path, pattern: &str, max_age_days: u64) {
             break;
         }
         let Ok(meta) = fs::metadata(&f) else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         if modified < cutoff {
             let _ = fs::remove_file(&f);
             count += 1;
@@ -466,7 +470,8 @@ fn prune_orphan_worktrees(sess: &State) {
         return;
     };
 
-    let cutoff = SystemTime::now() - Duration::from_secs(config::ORPHAN_WORKTREE_MAX_AGE_HOURS * 3600);
+    let cutoff =
+        SystemTime::now() - Duration::from_secs(config::ORPHAN_WORKTREE_MAX_AGE_HOURS * 3600);
     let mut count = 0;
 
     for entry in entries.flatten() {
@@ -509,7 +514,9 @@ fn prune_orphan_worktrees(sess: &State) {
 
             // Check age
             let Ok(meta) = wte.metadata() else { continue };
-            let Ok(modified) = meta.modified() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
             if modified >= cutoff {
                 continue;
             }
@@ -538,13 +545,15 @@ fn prune_orphan_worktrees(sess: &State) {
 fn clean_orphaned_wt_branches(repo_path: &Path) {
     let repo_str = repo_path.to_string_lossy().to_string();
 
-    let Ok(branch_output) = worktree::run_git_output(&["-C", &repo_str, "branch", "--list", "wt/*"])
+    let Ok(branch_output) =
+        worktree::run_git_output(&["-C", &repo_str, "branch", "--list", "wt/*"])
     else {
         return;
     };
 
-    let active_output = worktree::run_git_output(&["-C", &repo_str, "worktree", "list", "--porcelain"])
-        .unwrap_or_default();
+    let active_output =
+        worktree::run_git_output(&["-C", &repo_str, "worktree", "list", "--porcelain"])
+            .unwrap_or_default();
 
     for line in branch_output.lines() {
         let branch = line.trim();

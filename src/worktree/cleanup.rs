@@ -1,8 +1,8 @@
 //! Worktree cleanup, pruning, and rollback operations.
 
+use super::git;
 use crate::config;
 use crate::session::SpecEntry;
-use super::git;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -29,7 +29,14 @@ pub fn remove(entry: &SpecEntry) -> (bool, Option<String>) {
     // Clean — remove worktree
     let mut err = None;
     if git::run_git(&["-C", &entry.repo_path, "worktree", "remove", &entry.wt_path]).is_err() {
-        if let Err(e) = git::run_git(&["-C", &entry.repo_path, "worktree", "remove", "--force", &entry.wt_path]) {
+        if let Err(e) = git::run_git(&[
+            "-C",
+            &entry.repo_path,
+            "worktree",
+            "remove",
+            "--force",
+            &entry.wt_path,
+        ]) {
             err = Some(e);
         }
     }
@@ -61,7 +68,14 @@ pub fn clean_empty_worktree_dirs(repo_path: &Path) {
 /// Rollback: remove all worktrees created so far.
 pub fn rollback(entries: &[SpecEntry]) {
     for e in entries {
-        let _ = git::run_git(&["-C", &e.repo_path, "worktree", "remove", "--force", &e.wt_path]);
+        let _ = git::run_git(&[
+            "-C",
+            &e.repo_path,
+            "worktree",
+            "remove",
+            "--force",
+            &e.wt_path,
+        ]);
         let _ = fs::remove_dir_all(&e.wt_path);
         if e.branch.starts_with("wt/") {
             let _ = git::run_git(&["-C", &e.repo_path, "branch", "-D", &e.branch]);

@@ -261,9 +261,7 @@ pub fn append_spec_entry(path: &Path, entry: &SpecEntry) -> Result<(), SessionEr
     // Read existing entries (empty vec if file doesn't exist)
     let mut entries = match read_spec_file(path) {
         Ok(e) => e,
-        Err(SessionError::Io(ref io_err)) if io_err.kind() == io::ErrorKind::NotFound => {
-            Vec::new()
-        }
+        Err(SessionError::Io(ref io_err)) if io_err.kind() == io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(e),
     };
 
@@ -278,9 +276,7 @@ pub fn append_spec_entry(path: &Path, entry: &SpecEntry) -> Result<(), SessionEr
 
 /// Check if the spec file exists and has content.
 fn spec_file_has_content(path: &Path) -> bool {
-    fs::metadata(path)
-        .map(|m| m.len() > 0)
-        .unwrap_or(false)
+    fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -300,7 +296,10 @@ mod tests {
 
         assert_eq!(sess.id, "abc12345-6789-0000-1111-222233334444");
         assert_eq!(sess.short_id, "abc12345");
-        assert_eq!(sess.tmp_dir, config::session_tmp_dir("abc12345-6789-0000-1111-222233334444"));
+        assert_eq!(
+            sess.tmp_dir,
+            config::session_tmp_dir("abc12345-6789-0000-1111-222233334444")
+        );
         assert!(sess.resolved);
 
         reset_cache();
@@ -365,7 +364,11 @@ mod tests {
             let _ = fs::write(&marker_path, data);
         }
 
-        assert!(sess.id.is_empty(), "expected empty session ID on miss, got {:?}", sess.id);
+        assert!(
+            sess.id.is_empty(),
+            "expected empty session ID on miss, got {:?}",
+            sess.id
+        );
         assert!(sess.resolved);
 
         reset_cache();
