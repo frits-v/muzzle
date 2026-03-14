@@ -139,6 +139,23 @@ an automated check — enforced by convention and CLAUDE.md instructions.
 
 **Steer:** increase
 
+### 15. PR review comments must be addressed
+
+All review comments on PRs (human or bot) must be resolved before merge.
+For each comment: either fix the issue, or if `/council` disagrees with the
+suggestion, respond to the comment with a reasoned explanation. No comment
+should be left unaddressed.
+
+**Steer:** increase
+
+### 16. CI must be green before merge
+
+PRs must not be merged with failing CI checks. If CI fails after push,
+diagnose and fix the failure before requesting review or merge. This
+includes lint, fmt, test, build, and all custom gates.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
@@ -155,3 +172,5 @@ an automated check — enforced by convention and CLAUDE.md instructions.
 | shellcheck      | `shellcheck scripts/*.sh`                                | 3      | Shell scripts pass shellcheck   |
 | shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
+| ci-green        | `gh pr checks <pr-number>`                               | 5      | All CI checks pass before merge |
+| pr-comments     | (process gate)                                           | 3      | All review comments addressed   |
