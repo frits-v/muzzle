@@ -107,6 +107,30 @@ Current: 153 tests (130 unit + 13 integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
+### 11. Enforce conventional commit format
+
+All commits and PR titles must follow Conventional Commits (`type(scope): description`).
+Valid types: `feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `perf`, `evolve`.
+Scopes are optional. See CLAUDE.md for full spec.
+
+**Steer:** increase
+
+### 12. Shell scripts pass shellcheck + shfmt
+
+All `.sh` files must pass `shellcheck` (no warnings) and `shfmt -d -i 2 -ci -bn`
+(Google Shell Style: 2-space indent, case indent, binary operator newline).
+Scripts must guard `bash >= 4.0` when using `mapfile` or associative arrays.
+
+**Steer:** increase
+
+### 13. CLAUDE.md stays in sync with codebase
+
+`scripts/check-claude-md.sh` validates that CLAUDE.md claims (binary count,
+architecture tree, dependency count/names, test count, make targets) match
+the actual codebase. Must pass on every commit.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
@@ -119,4 +143,7 @@ Current: 153 tests (130 unit + 13 integration + 10 proptest). Do not regress.
 | five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
+| claude-md-valid | `bash scripts/check-claude-md.sh`                        | 3      | CLAUDE.md matches codebase      |
+| shellcheck      | `shellcheck scripts/*.sh`                                | 3      | Shell scripts pass shellcheck   |
+| shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |

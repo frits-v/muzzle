@@ -27,6 +27,13 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
       - name: License exists
         run: test -f LICENSE
+      - name: Shell lint (shellcheck + shfmt)
+        run: |
+          sudo apt-get install -y shellcheck
+          curl -sS https://webi.sh/shfmt | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          shellcheck scripts/*.sh
+          shfmt -d -i 2 -ci -bn scripts/*.sh
 
   test:
     name: Test
@@ -39,6 +46,8 @@ jobs:
         run: cargo test
       - name: Integration tests
         run: cargo test --test integration
+      - name: CLAUDE.md matches codebase
+        run: bash scripts/check-claude-md.sh
 
   build:
     name: Release Build

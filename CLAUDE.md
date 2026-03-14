@@ -14,6 +14,7 @@ src/
   gitcheck.rs         # 8 git safety regex patterns + worktree enforcement
   output.rs           # JSON response formatting for PreToolUse
   changelog.rs        # Audit log formatting + read-only detection
+  log.rs              # Structured JSON logging to stderr
   mcp.rs              # MCP tool routing (GitHub, Atlassian, Datadog, etc.)
   worktree/
     mod.rs            # Worktree creation, restore, ensure_for_repo
@@ -49,15 +50,79 @@ make test-one NAME=x  # Run single test by name
 - **Config persistence**: `.agents/`, `CLAUDE.md`, `.claude/` always write to main checkout, never worktrees
 - **Panic -> deny**: All hooks catch panics and deny rather than fail open
 
+## Commit Convention
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits
+and PR titles.
+
+```
+<type>(<scope>): <description>
+```
+
+| Type       | When                                          |
+|------------|-----------------------------------------------|
+| `feat`     | New functionality or capability                |
+| `fix`      | Bug fix                                        |
+| `docs`     | Documentation only                             |
+| `chore`    | Build, deps, config, tooling                   |
+| `ci`       | CI/CD changes                                  |
+| `test`     | Adding or updating tests only                  |
+| `refactor` | Code change that neither fixes nor adds        |
+| `perf`     | Performance improvement                        |
+| `evolve`   | Autonomous improvement cycle ledger entries     |
+
+Optional scopes: `sandbox`, `gitcheck`, `worktree`, `session`, `permissions`,
+`changelog`, `mcp`, `log`, `bench`, `fuzz`.
+
+**PR titles** must also follow this format. Squash-merge PRs inherit the PR title
+as the merge commit message.
+
+Examples:
+```
+feat(sandbox): add dot-dot normalization for path traversal
+fix(worktree): handle dirty worktree on session end
+docs: rewrite README with product-grade presentation
+chore: bump to v0.2.0 with cargo-release
+ci: add binary size gate to CI workflow
+test(gitcheck): add property-based tests for git safety
+evolve: cycle 13 -- directive-4-proptest improved
+```
+
+## Lint Suppression Policy
+
+**Lint rule exclusion comments require human approval.** Never add `#[allow(...)]`,
+`// nolint`, `# shellcheck disable=...`, or any lint suppression annotation without
+explicit user sign-off. If a lint rule fires, fix the underlying issue instead.
+
+The only pre-approved suppression is `SC2016` in `check-claude-md.sh` (regex
+patterns in single quotes are intentional).
+
+## Shell Style
+
+All shell scripts follow the [Google Shell Style Guide](https://google.github.io/styleguide/shellguide.html):
+
+- `[[ ]]` over `[ ]` for conditionals
+- `(( ))` for arithmetic
+- `mapfile` for array population (requires bash >= 4.0 — add version guard)
+- 2-space indent, case indent, binary operator at start of continuation line
+- Declare and assign separately (`var=""; var="$(cmd)"` not `readonly var="$(cmd)"`)
+- Lint: `shellcheck scripts/*.sh`
+- Format: `shfmt -d -i 2 -ci -bn scripts/*.sh`
+- Run both: `make lint-sh`
+
 ## Testing
 
-103 unit tests across all modules. Run with `make test` or `cargo test`.
+153 tests (130 unit + 13 integration + 10 proptest) plus 4 fuzz targets.
+Run with `make test` or `cargo test`.
 
 Test patterns:
 - Session tests use `SESSION_LOCK` mutex to avoid PPID marker conflicts
 - MCP rate limit tests use unique session IDs to avoid cross-test interference
 - Sandbox tests construct paths from `config::workspace()` for portability
+- Property tests use proptest strategies (256 cases each by default)
+- Fuzz targets require nightly: `cargo +nightly fuzz run <target>`
 
 ## Dependencies
 
-Only 4 crates: `serde`, `serde_json`, `regex`, `flate2`. No async runtime, no network deps.
+5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. No async runtime,
+no network deps, no proc macros.

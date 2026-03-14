@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration release install deploy clean lint fmt check
+.PHONY: build test test-unit test-integration release install deploy clean lint lint-sh fmt check
 
 # Default target
 all: check test build
@@ -54,9 +54,14 @@ deploy: release
 	@cp Cargo.toml Cargo.lock $(DEPLOY_TARGET)/ 2>/dev/null || cp Cargo.toml $(DEPLOY_TARGET)/
 	@echo "Deployed to $(DEPLOY_TARGET)/"
 
-# Lint
+# Lint Rust
 lint:
 	cargo clippy -- -D warnings
+
+# Lint shell scripts (shellcheck + shfmt)
+lint-sh:
+	shellcheck scripts/*.sh
+	shfmt -d -i 2 -ci -bn scripts/*.sh
 
 # Format check
 fmt:
