@@ -11,27 +11,35 @@ pub const PPID_WALK_DEPTH: usize = 3;
 /// PID marker directory (relative to Workspace).
 pub const PID_MARKER_DIR: &str = ".claude-tmp/by-pid";
 
-/// Spec file prefix/suffix (relative to Workspace).
+/// Worktree spec file name prefix (relative to Workspace).
 pub const SPEC_FILE_PREFIX: &str = ".claude-worktrees-";
+/// Worktree spec file name suffix.
 pub const SPEC_FILE_SUFFIX: &str = ".env";
 
-/// Changelog prefix/suffix (relative to Workspace).
+/// Changelog file name prefix (relative to Workspace).
 pub const CHANGELOG_PREFIX: &str = ".claude-changelog-";
+/// Changelog file name suffix.
 pub const CHANGELOG_SUFFIX: &str = ".md";
 
-/// Trace prefix/suffix (relative to Workspace).
+/// Trace log file name prefix (relative to Workspace).
 pub const TRACE_PREFIX: &str = ".claude-trace-";
+/// Trace log file name suffix.
 pub const TRACE_SUFFIX: &str = ".md";
 
-/// Atlassian rate limiting.
-pub const ATLASSIAN_RATE_WINDOW: u64 = 300; // seconds (5 min)
+/// Atlassian rate-limit sliding window in seconds (5 min).
+pub const ATLASSIAN_RATE_WINDOW: u64 = 300;
+/// Max Atlassian write calls per rate window before prompting.
 pub const ATLASSIAN_RATE_LIMIT: usize = 3;
 
-/// Cleanup thresholds.
+/// Max age (hours) before orphaned worktrees are pruned.
 pub const ORPHAN_WORKTREE_MAX_AGE_HOURS: u64 = 24;
+/// Max age (days) before stale spec files are removed.
 pub const STALE_SPEC_FILE_MAX_AGE_DAYS: u64 = 7;
+/// Max age (days) before stale temp directories are removed.
 pub const STALE_TEMP_DIR_MAX_AGE_DAYS: u64 = 7;
+/// Max age (days) before stale PID markers are removed.
 pub const STALE_PID_MARKER_MAX_AGE_DAYS: u64 = 1;
+/// Safety cap on cleanup iterations to avoid runaway loops.
 pub const MAX_CLEANUP_ITERATIONS: usize = 50;
 
 /// Resolve $HOME from environment or dirs fallback.

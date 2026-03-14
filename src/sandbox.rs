@@ -9,8 +9,11 @@ use std::path::Path;
 /// A path sandboxing decision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathDecision {
+    /// Path write is allowed.
     Allow,
+    /// Path write is denied with a reason message.
     Deny(String),
+    /// User should be prompted before allowing this write.
     Ask(String),
 }
 

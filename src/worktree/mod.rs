@@ -18,8 +18,11 @@ pub use git::{get_active_worktrees, is_git_repo, run_git_output};
 /// Error type for worktree operations.
 #[derive(Debug)]
 pub enum WorktreeError {
+    /// Worktree creation failed (after retry).
     CreateFailed(String),
+    /// Partial creation requires rollback of already-created worktrees.
     RollbackNeeded(String),
+    /// Underlying filesystem I/O error.
     IoError(std::io::Error),
 }
 
@@ -41,8 +44,11 @@ impl From<std::io::Error> for WorktreeError {
 
 /// Outcome of worktree creation.
 pub struct CreateResult {
+    /// Successfully created worktree spec entries.
     pub entries: Vec<SpecEntry>,
+    /// True if creation failed (all worktrees rolled back).
     pub failed: bool,
+    /// Human-readable error message on failure.
     pub error: String,
 }
 
