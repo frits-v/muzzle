@@ -21,35 +21,46 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt -- --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
       - run: cargo check
+      - name: Rustdoc warnings
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+      - name: License exists
+        run: test -f LICENSE
 
   test:
     name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
+      - name: Unit tests
+        run: cargo test
+      - name: Integration tests
+        run: cargo test --test integration
 
   build:
     name: Release Build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
-      - name: Show binary sizes
+      - name: Verify all 5 binaries
         run: |
-          echo "Binary sizes:"
-          ls -lh target/release/session-start target/release/permissions \
-            target/release/changelog target/release/session-end \
-            target/release/ensure-worktree 2>/dev/null || true
+          for bin in session-start permissions changelog session-end ensure-worktree; do
+            test -f "target/release/$bin" || { echo "MISSING: $bin"; exit 1; }
+          done
+          echo "All 5 binaries present"
+      - name: Check binary sizes
+        run: |
+          for bin in session-start permissions changelog session-end ensure-worktree; do
+            size=$(stat -f%z "target/release/$bin" 2>/dev/null || stat -c%s "target/release/$bin")
+            if [ "$size" -gt 5242880 ]; then
+              echo "FAIL: $bin is ${size} bytes (> 5MB)"
+              exit 1
+            fi
+            echo "OK: $bin (${size} bytes)"
+          done

@@ -18,10 +18,12 @@ Fitness goals for muzzle — session isolation hooks for Claude Code.
 
 ### 1. Add CI via GitHub Actions
 
-Ship a CI pipeline that runs all gates on every push and PR. Minimum: build,
-test, clippy, fmt, integration tests. Bonus: release binary artifacts.
+All 9 gates covered in `.github/workflows/ci.yml`:
+- [x] check & lint: fmt, clippy --all-targets, rustdoc -D warnings, license
+- [x] test: unit + integration on macOS
+- [x] build: release build, 5-binary verify, binary size check
 
-**Steer:** increase
+**Steer:** complete
 
 ### 2. Harden sandbox edge cases
 
