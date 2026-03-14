@@ -77,6 +77,15 @@ Optional scopes: `sandbox`, `gitcheck`, `worktree`, `session`, `permissions`,
 **PR titles** must also follow this format. Squash-merge PRs inherit the PR title
 as the merge commit message.
 
+**Before pushing a feature branch**, always rebase on `origin/main`:
+```bash
+git fetch origin main
+git rebase origin/main
+# resolve any conflicts
+git push origin <branch> --force-with-lease
+```
+Never submit a PR with merge conflicts.
+
 Examples:
 ```
 feat(sandbox): add dot-dot normalization for path traversal

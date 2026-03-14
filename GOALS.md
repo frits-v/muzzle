@@ -131,6 +131,14 @@ the actual codebase. Must pass on every commit.
 
 **Steer:** increase
 
+### 14. PRs must rebase cleanly before push
+
+Always rebase on `origin/<default-branch>` before pushing a feature branch.
+PRs with merge conflicts must never be submitted. This is a process gate, not
+an automated check — enforced by convention and CLAUDE.md instructions.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
