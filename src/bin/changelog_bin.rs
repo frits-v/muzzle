@@ -1,7 +1,7 @@
 //! PostToolUse hook for Claude Code.
 //!
 //! Receives JSON on stdin: {"tool_name": "...", "tool_input": {...}, "tool_output": {...}}
-//! No stdout. Writes to .claude-changelog-<session-id>.md
+//! No stdout. Writes to `.claude-changelog-{session-id}.md`
 //! Skips read-only tools (FR-AL-2).
 
 use muzzle::changelog::{self, InputFields, OutputFields, ToolInput};

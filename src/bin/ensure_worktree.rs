@@ -1,6 +1,6 @@
 //! On-demand worktree creation binary.
 //!
-//! Usage: ensure-worktree <repo-name>
+//! Usage: `ensure-worktree <repo-name>`
 //!
 //! Resolves the current session, creates a worktree for the given repo
 //! (idempotent — reuses existing), updates the spec file, and prints

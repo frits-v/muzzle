@@ -213,9 +213,14 @@ fn output_worktree_paths(entries: &[SpecEntry]) {
     }
     let mut text = String::from("\nActive worktrees for this session:\n");
     for e in entries {
-        text.push_str(&format!("  {}: {} (branch: {})\n", e.repo, e.wt_path, e.branch));
+        text.push_str(&format!(
+            "  {}: {} (branch: {})\n",
+            e.repo, e.wt_path, e.branch
+        ));
     }
-    text.push_str("\nUse these worktree paths for ALL file operations (reads, writes, git commands).\n");
+    text.push_str(
+        "\nUse these worktree paths for ALL file operations (reads, writes, git commands).\n",
+    );
     text.push_str("Do NOT use the main checkout directly — use the worktree path above.");
     emit_context(&text);
 }

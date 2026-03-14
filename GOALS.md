@@ -16,17 +16,22 @@ Fitness goals for muzzle — session isolation hooks for Claude Code.
 
 ## Directives
 
-### 1. Close tech-debt from initial post-mortem
+### 1. Add CI via GitHub Actions
 
-All 4 items resolved:
-- [x] Shared WORKTREE_MISSING constant (worktree_missing_msg in lib.rs)
-- [x] Advisory lock on append_spec_entry (flock via libc)
-- [x] WORKTREE_MISSING integration tests (3 new tests)
-- [x] catch_unwind in ensure-worktree binary
+Ship a CI pipeline that runs all gates on every push and PR. Minimum: build,
+test, clippy, fmt, integration tests. Bonus: release binary artifacts.
 
-**Steer:** complete
+**Steer:** increase
 
-### 2. Maintain test coverage above 100 tests
+### 2. Harden sandbox edge cases
+
+Fuzz and stress-test the permission boundaries: symlink traversal, path
+canonicalization, race conditions in worktree creation, Unicode filenames,
+paths with spaces. Each edge case gets a test.
+
+**Steer:** increase
+
+### 3. Maintain test coverage above 100 tests
 
 Current: 116 tests (103 unit + 13 integration). Do not regress.
 
@@ -42,3 +47,6 @@ Current: 116 tests (103 unit + 13 integration). Do not regress.
 | cargo-fmt       | `cargo fmt -- --check`                           | 3      | Code formatted per rustfmt.toml   |
 | integration     | `cargo build && cargo test --test integration`   | 5      | Integration tests pass            |
 | five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
+| rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
+| binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
+| license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
