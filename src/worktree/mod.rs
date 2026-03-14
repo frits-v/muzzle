@@ -18,8 +18,11 @@ pub use git::{get_active_worktrees, is_git_repo, run_git_output};
 /// Error type for worktree operations.
 #[derive(Debug)]
 pub enum WorktreeError {
+    /// Worktree creation failed (after retry).
     CreateFailed(String),
+    /// Partial creation requires rollback of already-created worktrees.
     RollbackNeeded(String),
+    /// Underlying filesystem I/O error.
     IoError(std::io::Error),
 }
 
@@ -41,8 +44,11 @@ impl From<std::io::Error> for WorktreeError {
 
 /// Outcome of worktree creation.
 pub struct CreateResult {
+    /// Successfully created worktree spec entries.
     pub entries: Vec<SpecEntry>,
+    /// True if creation failed (all worktrees rolled back).
     pub failed: bool,
+    /// Human-readable error message on failure.
     pub error: String,
 }
 
@@ -84,10 +90,12 @@ fn create_from_env(sess: &State, env_specs: &str) -> CreateResult {
 
         let repo_path = config::workspace().join(repo);
         if !git::is_git_repo(&repo_path) {
-            eprintln!(
-                "WARN: Skipping {} — not a git repo at {}",
-                repo,
-                repo_path.display()
+            crate::log::emit_full(
+                "WARN",
+                "session-start",
+                &format!("skipping {} — not a git repo", repo),
+                None,
+                Some(&repo_path.display().to_string()),
             );
             continue;
         }
@@ -262,7 +270,7 @@ fn create_single_worktree(
 ///
 /// Used by the `ensure-worktree` binary for lazy worktree creation.
 /// Validates the repo is a git repo under workspace, then delegates to
-/// `create_single_worktree()` with no branch (ephemeral wt/<short-id>).
+/// `create_single_worktree()` with no branch (ephemeral `wt/<short-id>`).
 /// Returns the spec entry for the created worktree.
 pub fn ensure_for_repo(sess: &State, repo: &str) -> Result<SpecEntry, WorktreeError> {
     let repo_path = config::workspace().join(repo);

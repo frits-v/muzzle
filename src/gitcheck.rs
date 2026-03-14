@@ -8,14 +8,18 @@ use std::sync::LazyLock;
 /// Result of a git safety check.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitResult {
+    /// Command is safe to execute.
     Ok,
+    /// Command is blocked with a reason message.
     Block(String),
 }
 
 /// Result of a gh merge check.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AskResult {
+    /// True if the user should be prompted before proceeding.
     pub should_ask: bool,
+    /// Human-readable reason for the prompt.
     pub reason: String,
 }
 

@@ -9,8 +9,11 @@ use std::path::Path;
 /// A path sandboxing decision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PathDecision {
+    /// Path write is allowed.
     Allow,
+    /// Path write is denied with a reason message.
     Deny(String),
+    /// User should be prompted before allowing this write.
     Ask(String),
 }
 
@@ -226,7 +229,36 @@ pub fn check_path_with_context(
     PathDecision::Ask(format!("Write to {} — outside normal workspace", raw_path))
 }
 
+/// Collapse `.` and `..` segments from a path string without touching the filesystem.
+///
+/// This provides defense-in-depth for paths that cannot be `canonicalize`d
+/// (because they don't exist yet). Unlike `canonicalize`, this does NOT
+/// resolve symlinks — it only normalizes logical traversal.
+fn normalize_dot_segments(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    if path.starts_with('/') {
+        format!("/{}", parts.join("/"))
+    } else if parts.is_empty() {
+        ".".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
 /// Resolve a path string to absolute, following symlinks where possible.
+///
+/// Falls back to logical `..` normalization when `canonicalize` fails
+/// (path doesn't exist on disk). This prevents `..` traversal attacks
+/// against string-based path checks.
 fn resolve_path(path: &str) -> String {
     // Try full symlink resolution
     if let Ok(resolved) = std::fs::canonicalize(path) {
@@ -243,14 +275,17 @@ fn resolve_path(path: &str) -> String {
         }
     }
 
+    // Normalize .. segments even when path doesn't exist on disk
+    let normalized = normalize_dot_segments(path);
+
     // Try making it absolute
-    if !Path::new(path).is_absolute() {
+    if !Path::new(&normalized).is_absolute() {
         if let Ok(abs) = std::env::current_dir() {
-            return abs.join(path).to_string_lossy().to_string();
+            return abs.join(&normalized).to_string_lossy().to_string();
         }
     }
 
-    path.to_string()
+    normalized
 }
 
 /// Check if a raw path resolves to a system path (public, for git -C checks).
@@ -845,5 +880,368 @@ mod tests {
                 result
             );
         }
+    }
+
+    // ── Sandbox edge-case hardening tests (directive 2) ──────────────
+
+    #[test]
+    fn test_symlink_to_system_path() {
+        // Create a symlink inside a temp dir that points to a system path.
+        // The sandbox must resolve the symlink and deny the write.
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        let tmp = std::env::temp_dir().join("muzzle-test-symlink");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("create test dir");
+
+        let link = tmp.join("etc-link");
+        let _ = fs::remove_file(&link);
+        symlink("/etc", &link).expect("create symlink to /etc");
+
+        let attack_path = format!("{}/hosts", link.display());
+        let result = is_system_path_resolved(&attack_path);
+        assert!(result, "symlink to /etc should resolve to a system path");
+
+        // Also test via check_path — should be Deny
+        let sess = no_session();
+        let decision = check_path(&attack_path, Some(&sess));
+        assert!(
+            matches!(decision, PathDecision::Deny(_)),
+            "expected DENY for symlink traversal to system path, got {:?}",
+            decision
+        );
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_symlink_traversal_via_parent() {
+        // Symlink that makes a path look like it's in workspace but resolves outside.
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        let tmp = std::env::temp_dir().join("muzzle-test-symlink-parent");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("create test dir");
+
+        // Create symlink: tmp/escape -> /
+        let link = tmp.join("escape");
+        let _ = fs::remove_file(&link);
+        symlink("/", &link).expect("create symlink to /");
+
+        // Path through symlink resolves to /etc/hosts
+        let attack_path = format!("{}/etc/hosts", link.display());
+        let result = is_system_path_resolved(&attack_path);
+        assert!(result, "symlink traversal through root should be detected");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_path_with_spaces() {
+        let sess = no_session();
+        let home = config::home();
+
+        // Path with spaces under HOME — should be allowed
+        let p = format!("{}/My Documents/some file.txt", home.display());
+        let result = check_path(&p, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW for home path with spaces, got {:?}",
+            result
+        );
+
+        // System path with spaces — still blocked
+        let result = check_path("/etc/my config/hosts", Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Deny(_)),
+            "expected DENY for system path with spaces, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_unicode_filenames() {
+        let sess = no_session();
+        let home = config::home();
+
+        // Unicode filenames under HOME — should be allowed
+        let paths = [
+            format!("{}/Documents/日本語ファイル.txt", home.display()),
+            format!("{}/données/résumé.pdf", home.display()),
+            format!("{}/src/émoji_🦀_test.rs", home.display()),
+        ];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "expected ALLOW for unicode filename {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+
+        // Unicode in system path — still blocked
+        let result = check_path("/etc/données/config", Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Deny(_)),
+            "expected DENY for system path with unicode, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_dot_dot_traversal_system_path() {
+        // Path traversal using /../ to reach system paths.
+        // On real filesystems canonicalize resolves this, but we also need
+        // the raw-string check as defense-in-depth for non-existent paths.
+        let home = config::home();
+
+        // This path canonicalizes to /etc/hosts if the prefix exists
+        let attack = format!("{}/../../etc/hosts", home.display());
+        let resolved = resolve_path(&attack);
+        // canonicalize should resolve this since $HOME exists
+        assert!(
+            is_system_path(&resolved) || is_private_system_path(&resolved),
+            "dot-dot traversal to /etc should resolve to system path, resolved to: {}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn test_double_slash_system_path() {
+        let sess = no_session();
+
+        // Double-slash paths: //etc/hosts should still be blocked after resolution
+        let result = check_path("//etc/hosts", Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Deny(_)),
+            "expected DENY for double-slash system path, got {:?}",
+            result
+        );
+
+        // Multiple slashes
+        let result = check_path("///etc///hosts", Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Deny(_)),
+            "expected DENY for multi-slash system path, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_macos_private_prefix_deny() {
+        let sess = no_session();
+
+        // macOS resolves /etc -> /private/etc, /var -> /private/var
+        let paths = ["/private/etc/hosts", "/private/var/log/syslog"];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Deny(_)),
+                "expected DENY for /private/ system path {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_empty_path() {
+        let sess = no_session();
+        // Empty path should not panic — graceful handling
+        let result = check_path("", Some(&sess));
+        // Empty resolves to cwd; should not crash regardless of decision
+        assert!(
+            !matches!(result, PathDecision::Deny(ref m) if m.contains("panic")),
+            "empty path should not cause panic, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_very_long_path() {
+        let sess = no_session();
+        // Very long path — should not cause stack overflow or panic
+        let long_segment = "a".repeat(255);
+        let long_path = format!("/tmp/{}/{}/{}", long_segment, long_segment, long_segment);
+        let result = check_path_with_context(&long_path, Some(&sess), ToolContext::Bash);
+        // /tmp paths via Bash → Allow
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW for long /tmp path via Bash, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_trailing_slash_system_paths() {
+        let sess = no_session();
+        // Trailing slashes should not bypass system path checks
+        let paths = ["/etc/", "/usr/", "/var/", "/opt/"];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Deny(_)),
+                "expected DENY for system path with trailing slash {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_session_state_null() {
+        // Passing None for session state should not panic
+        let result = check_path("/tmp/test.txt", None);
+        // No session → falls through to HOME/outside-HOME checks
+        assert!(
+            !matches!(result, PathDecision::Deny(_)),
+            "expected non-DENY for /tmp with no session, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_worktree_path_with_spaces_allowed() {
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        // Repo name or file path with spaces inside worktree
+        let p = format!(
+            "{}/my-repo/.worktrees/abc12345/path with spaces/file.py",
+            ws_str
+        );
+        let result = check_path(&p, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW for worktree path with spaces, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_dot_dot_in_worktree_path() {
+        // Attempt to escape worktree via /../
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        let attack = format!("{}/web-app/.worktrees/abc12345/../../secret.key", ws_str);
+        // If the worktree dir exists, canonicalize resolves the /../
+        // and the result would be <ws>/web-app/secret.key which is a main
+        // checkout path → should be DENY/REDIRECT, not ALLOW
+        let result = check_path(&attack, Some(&sess));
+        assert!(
+            !matches!(result, PathDecision::Allow),
+            "dot-dot escape from worktree should not be allowed, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_case_sensitivity_system_paths() {
+        let sess = no_session();
+        // On case-sensitive filesystems, /Etc/hosts is NOT /etc/hosts
+        // But we should still check — macOS HFS+ is case-insensitive
+        // The sandbox uses exact string matching, which is correct for case-sensitive systems
+        let result = check_path("/Etc/hosts", Some(&sess));
+        // On case-insensitive macOS, canonicalize might resolve to /etc/hosts
+        // On case-sensitive Linux, this path doesn't exist
+        // Either way, the test verifies no panic and sensible behavior
+        assert!(
+            !matches!(result, PathDecision::Allow),
+            "/Etc/hosts should not be blindly allowed, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_resolve_path_nonexistent_deep() {
+        // resolve_path should handle deeply nested non-existent paths without panic
+        let deep = "/nonexistent/a/b/c/d/e/f/g/h/i/j/k/l/m/test.txt";
+        let resolved = resolve_path(deep);
+        // Should return the path as-is (absolute, no canonicalization possible)
+        assert!(
+            resolved.starts_with('/'),
+            "resolved path should be absolute, got: {}",
+            resolved
+        );
+    }
+
+    #[test]
+    fn test_dev_fd_range() {
+        let sess = no_session();
+        // File descriptors beyond typical range — still allowed (no range check)
+        let paths = ["/dev/fd/0", "/dev/fd/99", "/dev/fd/255"];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "expected ALLOW for {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_worktree_missing_for_unknown_repo() {
+        let sess = sess_no_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        // Write to a repo path when no worktrees exist → WORKTREE_MISSING
+        let p = format!("{}/unknown-repo/src/main.rs", ws_str);
+        let result = check_path(&p, Some(&sess));
+        if let PathDecision::Deny(msg) = &result {
+            assert!(
+                msg.contains("WORKTREE_MISSING"),
+                "expected WORKTREE_MISSING in deny message, got: {}",
+                msg
+            );
+        } else {
+            panic!(
+                "expected DENY with WORKTREE_MISSING for repo without worktree, got {:?}",
+                result
+            );
+        }
+    }
+
+    // ── normalize_dot_segments unit tests ────────────────────────────
+
+    #[test]
+    fn test_normalize_basic() {
+        assert_eq!(normalize_dot_segments("/a/b/c"), "/a/b/c");
+        assert_eq!(normalize_dot_segments("/a/./b"), "/a/b");
+        assert_eq!(normalize_dot_segments("/a/b/../c"), "/a/c");
+        assert_eq!(normalize_dot_segments("/a/b/../../c"), "/c");
+    }
+
+    #[test]
+    fn test_normalize_above_root() {
+        // Going above root should clamp at root
+        assert_eq!(normalize_dot_segments("/a/../../../etc"), "/etc");
+        assert_eq!(normalize_dot_segments("/../etc/hosts"), "/etc/hosts");
+    }
+
+    #[test]
+    fn test_normalize_empty_and_dot() {
+        // Empty string is relative → normalizes to "."
+        assert_eq!(normalize_dot_segments(""), ".");
+        assert_eq!(normalize_dot_segments("."), ".");
+        assert_eq!(normalize_dot_segments("./a"), "a");
+    }
+
+    #[test]
+    fn test_normalize_preserves_absolute() {
+        assert!(normalize_dot_segments("/tmp/foo").starts_with('/'));
+        assert!(!normalize_dot_segments("relative/path").starts_with('/'));
+    }
+
+    #[test]
+    fn test_normalize_double_slashes() {
+        // Double slashes produce empty segments which are skipped
+        assert_eq!(normalize_dot_segments("//etc//hosts"), "/etc/hosts");
     }
 }

@@ -1,0 +1,13 @@
+{"cycle":1,"target":"worktree-missing-constant","result":"improved","canonical_sha":"c552a71","timestamp":"2026-03-13T05:24:00-07:00","goals_passing":6,"goals_total":6}
+{"cycle":2,"target":"catch-unwind-ensure-worktree","result":"improved","canonical_sha":"385b725","timestamp":"2026-03-13T05:25:00-07:00","goals_passing":6,"goals_total":6}
+{"cycle":3,"target":"flock-append-spec-entry","result":"improved","canonical_sha":"ad200db","timestamp":"2026-03-13T05:27:00-07:00","goals_passing":6,"goals_total":6}
+{"cycle":4,"target":"worktree-missing-integration-tests","result":"improved","canonical_sha":"7e56d03","timestamp":"2026-03-13T05:30:00-07:00","goals_passing":6,"goals_total":6}
+{"cycle":5,"target":"directive-1-ci","result":"improved","timestamp":"2026-03-13T21:21:36-07:00","goals_passing":9,"goals_total":9}
+{"cycle":6,"target":"directive-9-workspace-validation","result":"improved","timestamp":"2026-03-13T21:23:42-07:00","goals_passing":9,"goals_total":9}
+{"cycle":7,"target":"directive-7-doc-coverage","result":"improved","canonical_sha":"e4b9acc","timestamp":"2026-03-13T21:39:42-07:00"}
+{"cycle":8,"target":"directive-2-sandbox-hardening","result":"improved","canonical_sha":"910b672","goals_passing":6,"goals_total":6,"tests_before":118,"tests_after":140,"timestamp":"2026-03-13T21:50:42-07:00"}
+{"cycle":9,"target":"directive-5-structured-logging","result":"improved","canonical_sha":"2e707f6","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:56:31-07:00"}
+{"cycle":10,"target":"directive-6-semver-release","result":"improved","canonical_sha":"ccba7fc","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:57:51-07:00"}
+{"cycle":11,"target":"directive-8-benchmark-coldstart","result":"improved","canonical_sha":"dc69a98","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:59:36-07:00"}
+{"cycle":12,"target":"directive-3-fuzz-targets","result":"improved","canonical_sha":"63ef7c2","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T22:06:59-07:00"}
+{"cycle":13,"target":"directive-4-proptest","result":"improved","canonical_sha":"6606a5c","goals_passing":9,"goals_total":9,"tests_before":143,"tests_after":153,"timestamp":"2026-03-13T22:09:13-07:00"}

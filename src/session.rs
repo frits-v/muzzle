@@ -13,7 +13,9 @@ use std::process::Command;
 /// Error type for session operations.
 #[derive(Debug)]
 pub enum SessionError {
+    /// Filesystem I/O error.
     Io(io::Error),
+    /// Failed to parse session data (PID, spec file, etc.).
     Parse(String),
 }
 
@@ -35,12 +37,19 @@ impl From<io::Error> for SessionError {
 /// Holds resolved session information. Cached per invocation.
 #[derive(Debug, Clone)]
 pub struct State {
+    /// Full session UUID.
     pub id: String,
+    /// First 8 characters of the session ID.
     pub short_id: String,
+    /// Per-session temp directory (`.claude-tmp/{session-id}/`).
     pub tmp_dir: PathBuf,
+    /// Worktree spec file path (`.claude-worktrees-{session-id}.env`).
     pub spec_file: PathBuf,
+    /// Session changelog path (`.claude-changelog-{session-id}.md`).
     pub changelog_path: PathBuf,
+    /// True if this session has at least one worktree registered.
     pub worktree_active: bool,
+    /// True once resolution has completed (even if no session was found).
     pub resolved: bool,
 }
 
@@ -204,9 +213,13 @@ pub fn register_pid(session_id: &str) -> Result<(), SessionError> {
 /// One line in the worktree spec file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecEntry {
+    /// Repository name (e.g. "my-app").
     pub repo: String,
+    /// Git branch checked out in the worktree.
     pub branch: String,
+    /// Absolute path to the worktree directory.
     pub wt_path: String,
+    /// Absolute path to the original repo root.
     pub repo_path: String,
 }
 

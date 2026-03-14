@@ -1,107 +1,283 @@
-# muzzle
+<p align="center">
+  <img src="docs/logo.png" alt="muzzle logo" width="200">
+</p>
 
-Session isolation hooks for [Claude Code](https://claude.ai/code). Enforces
-workspace sandboxing, git safety, and worktree-based session isolation so
-concurrent Claude sessions never clobber each other.
+<h1 align="center">muzzle</h1>
 
-## What It Does
+<p align="center">
+  <strong>Session isolation for AI coding agents.</strong><br>
+  Keep your repos safe when multiple Claude Code sessions run side by side.
+</p>
 
-Five Rust binaries that plug into Claude Code's hook system:
+<p align="center">
+  <a href="https://github.com/frits-v/muzzle/actions/workflows/ci.yml"><img src="https://github.com/frits-v/muzzle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/frits-v/muzzle/releases/latest"><img src="https://img.shields.io/github/v/tag/frits-v/muzzle?label=version&sort=semver" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust">
+  <img src="https://img.shields.io/badge/tests-153-brightgreen.svg" alt="Tests">
+</p>
 
-| Binary            | Hook Event   | Purpose                                   |
-|-------------------|--------------|-------------------------------------------|
-| `session-start`   | SessionStart | Create worktrees, changelog, register PID |
-| `permissions`     | PreToolUse   | Sandbox writes, block unsafe git ops      |
-| `changelog`       | PostToolUse  | Audit log (commits, pushes, file edits)   |
-| `session-end`     | SessionEnd   | Remove worktrees, gzip logs, clean up     |
-| `ensure-worktree` | (on-demand)  | Lazily create worktrees mid-session       |
+---
 
-## Setup
+## The Problem
 
-## Prerequisites
+You ask Claude Code to refactor your auth module. Meanwhile, another session is fixing a bug in the same file. One overwrites the other. Your `git push --force` nukes a teammate's branch. A stray `rm -rf` targets `/usr/`. Fun times.
 
-```bash
-# Install Rust via mise
-mise use -g rust@latest
+AI coding agents operate with broad filesystem and git access. Without guardrails:
+
+- **Concurrent sessions clobber each other** — two agents editing the same files
+- **Dangerous git ops slip through** — force pushes, pushes to main, tag deletions
+- **Writes escape the workspace** — system paths, dotfiles, config directories
+- **Crashes fail open** — a hook panic means no protection at all
+
+## The Solution
+
+Muzzle is a set of Rust binaries that plug into Claude Code's [hook system](https://docs.anthropic.com/en/docs/claude-code/hooks). Each session gets its own git worktree, writes are sandboxed to the workspace, and dangerous operations are blocked before they execute.
+
+```
+                   ┌─────────────────────┐
+                   │   Claude Code        │
+                   │   Session A          │
+                   └──────────┬──────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        SessionStart     PreToolUse      SessionEnd
+              │               │               │
+              ▼               ▼               ▼
+     ┌────────────────┐ ┌──────────┐ ┌──────────────┐
+     │ Create worktree│ │ Sandbox  │ │ Remove       │
+     │ from origin/   │ │ check    │ │ worktrees    │
+     │ default branch │ │ path +   │ │ gzip logs    │
+     │                │ │ git ops  │ │ clean PIDs   │
+     └────────────────┘ └──────────┘ └──────────────┘
+              │               │
+              ▼               ▼
+     repo/.worktrees/    ALLOW / DENY / ASK
+     <short-id>/
 ```
 
+**3.4ms** mean latency per permission check. You won't notice it.
+
 ## Quick Start
-### 1. Build and deploy
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (stable), or via mise: `mise use -g rust@latest`
+- [Claude Code](https://claude.ai/code) with hooks support
+- A workspace directory containing your git repos
+
+### Install
 
 ```bash
-cd ~/src/muzzle
+git clone https://github.com/frits-v/muzzle.git
+cd muzzle
 make deploy
 ```
 
-This builds release binaries and installs them to `~/.local/share/muzzle/bin/`.
-To deploy elsewhere: `make deploy DEPLOY_TARGET=/your/path`.
+This builds optimized binaries (~1.4 MB each) and installs them to `~/.local/share/muzzle/bin/`. Custom path: `make deploy DEPLOY_TARGET=/your/path`.
 
-### 2. Configure workspace
+### Configure
 
-Create `~/.config/muzzle/config`:
+**1. Set your workspace** — the parent directory that holds your git repos:
 
 ```bash
 mkdir -p ~/.config/muzzle
-cat > ~/.config/muzzle/config << 'EOF'
-# Directory containing your git repos (each repo is a direct child).
-# Also: MUZZLE_WORKSPACE env var, or defaults to $HOME/src.
-workspace = /path/to/your/workspace
-EOF
+echo 'workspace = /path/to/your/repos' > ~/.config/muzzle/config
 ```
 
-The workspace is the parent directory that holds your git repos. For example,
-if your repos live at `~/src/myorg/repo-a/` and `~/src/myorg/repo-b/`, your
-workspace is `~/src/myorg`.
-
-### 3. Register hooks in Claude Code
-
-Add the following to `~/.claude/settings.json` (merge into existing config):
+**2. Register hooks** — add to `~/.claude/settings.json`:
 
 ```jsonc
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "~/.local/share/muzzle/bin/session-start", "timeout": 30 }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "~/.local/share/muzzle/bin/permissions", "timeout": 5 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "~/.local/share/muzzle/bin/changelog", "timeout": 10 }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          { "type": "command", "command": "~/.local/share/muzzle/bin/session-end", "timeout": 10 }
-        ]
-      }
-    ]
+    "SessionStart": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "~/.local/share/muzzle/bin/session-start", "timeout": 30 }]
+    }],
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "~/.local/share/muzzle/bin/permissions", "timeout": 5 }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "~/.local/share/muzzle/bin/changelog", "timeout": 10 }]
+    }],
+    "SessionEnd": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "~/.local/share/muzzle/bin/session-end", "timeout": 10 }]
+    }]
   }
 }
 ```
 
-> **Note**: `~` expansion depends on your shell. If hooks fail to launch, use
-> the full absolute path (e.g., `/Users/yourname/.local/share/muzzle/bin/...`).
+> If hooks fail to launch, use absolute paths instead of `~`.
 
-### 4. (Recommended) Add deny rules
+**3. Verify** — start a Claude Code session inside your workspace:
 
-Defense-in-depth fallback in case a hook fails to load:
+```
+Active worktrees for this session:
+  my-repo: /path/to/my-repo/.worktrees/a1b2c3/ (branch: wt/a1b2c3)
+```
+
+That's it. Your session is now isolated.
+
+## How It Works
+
+### Worktree Isolation
+
+Every session gets its own [git worktree](https://git-scm.com/docs/git-worktree) per repo. Session A and Session B edit the same repository but in completely separate working directories, each branched from `origin/<default-branch>`.
+
+```
+my-repo/
+├── .git/                          # shared git database
+├── .worktrees/
+│   ├── a1b2c3/                    # Session A's workspace
+│   │   ├── src/
+│   │   └── ...
+│   └── d4e5f6/                    # Session B's workspace
+│       ├── src/
+│       └── ...
+├── src/                           # main checkout (protected)
+└── ...
+```
+
+**Eager creation**: If you start Claude Code inside a git repo, a worktree is created immediately.
+
+**Lazy creation**: If you start outside a repo (e.g., your workspace root), worktrees are created on-demand when you first touch a repo. The permissions hook denies the write with `WORKTREE_MISSING:<repo>`, Claude runs `ensure-worktree <repo>`, and retries.
+
+Pre-specify repos with `CLAUDE_WORKTREES=repo-a:main,repo-b:develop`.
+
+### Permission Enforcement
+
+Every file write and Bash command passes through the `permissions` binary. Three layers of defense:
+
+| Layer               | What it checks                                                    |
+|---------------------|-------------------------------------------------------------------|
+| **Path sandbox**    | System paths (`/etc`, `/usr`, `/System`) always blocked. Dangerous dotfiles prompt. Writes redirected to worktree paths. |
+| **Git safety**      | 8 regex patterns: force push, push to main, delete tags, hard reset, `--no-verify`, `--follow-tags`, delete main/master, rebase onto main. |
+| **Worktree guard**  | Writes to main checkout blocked when worktrees are active. `WORKTREE_MISSING` for repos without a worktree yet. |
+
+Every layer returns `ALLOW`, `DENY`, or `ASK` (prompt the user). Panics always deny — hooks never fail open.
+
+### Structured Logging
+
+All 5 binaries emit JSON lines to stderr for machine-parseable log aggregation:
+
+```json
+{"ts":"2026-03-13T12:00:00Z","level":"WARN","bin":"permissions","msg":"worktree has uncommitted changes","detail":"/path/to/.worktrees/a1b2c3"}
+```
+
+### Session Lifecycle
+
+| Event        | Binary            | What happens                                          |
+|--------------|-------------------|-------------------------------------------------------|
+| Session start | `session-start`  | Resolve session ID via PPID walk, create worktrees, start changelog, register PID marker |
+| Tool use     | `permissions`     | Sandbox path + git safety checks, return ALLOW/DENY/ASK |
+| After tool   | `changelog`       | Append mutation to session audit log (skips read-only ops) |
+| Session end  | `session-end`     | Remove worktrees (warn on dirty), gzip logs, clean PID markers |
+| On-demand    | `ensure-worktree` | Create worktree lazily for a repo not covered at startup |
+
+## Safety Guarantees
+
+### What's Blocked
+
+| Pattern                     | Why                                          | What to do instead                           |
+|-----------------------------|----------------------------------------------|----------------------------------------------|
+| `git push --force`          | Overwrites remote history                    | `git push --force-with-lease origin <branch>` |
+| `git push origin main`      | Bypasses PR review                           | Push a feature branch, open a PR             |
+| `git push --follow-tags`    | Pushes ALL local tags (dangerous)            | `git push origin <specific-tag>`             |
+| `git push --no-verify`      | Skips pre-push hooks                         | Fix the hook failures                        |
+| `git tag -d v1.2.3`         | Deletes semver tags (breaks consumers)       | Release a new patch version                  |
+| `git reset --hard origin/*` | Destroys local work                          | `git stash` or `git reset --soft`            |
+| Writes to `/etc`, `/usr`    | System path modification                     | Stay within your workspace                   |
+| Writes to main checkout     | Bypasses worktree isolation                  | Use the `.worktrees/<id>/` path              |
+
+### What's Allowed
+
+- `--force-with-lease` (safe force push — fails if remote changed)
+- Writes to worktree paths
+- Writes to `.claude-tmp/`, `.claude-changelog*`, `CLAUDE.md`
+- Bash writes to `/tmp` (compilers, pip, etc.)
+- All read operations (no permission check needed)
+
+## Development
+
+```bash
+make build            # Dev build (fast)
+make test             # All tests (153 passing)
+make release          # Optimized + LTO + stripped
+make deploy           # Build and install to ~/.local/share/muzzle/
+make lint             # clippy -D warnings
+make fmt              # Check formatting
+make sizes            # Show release binary sizes
+
+# Advanced
+make test-one NAME=test_sandbox_system_paths   # Single test
+cargo +nightly fuzz run fuzz_git_safety        # Fuzz testing
+bash scripts/bench-coldstart.sh                # Benchmark permissions latency
+```
+
+### Test Suite
+
+| Category     | Count | Framework |
+|--------------|------:|-----------|
+| Unit         |   130 | `#[test]` |
+| Integration  |    13 | `#[test]` |
+| Property     |    10 | proptest  |
+| Fuzz targets |     4 | cargo-fuzz |
+| **Total**    | **153+4** |       |
+
+### Architecture
+
+```
+src/
+  lib.rs              # Library root — re-exports all modules
+  config.rs           # Workspace resolution, path constants
+  session.rs          # Session ID via PPID walk, spec file I/O (flock)
+  sandbox.rs          # Path sandboxing (7 rules + dot-dot normalization)
+  gitcheck.rs         # 8 git safety regex patterns + repo extraction
+  output.rs           # JSON response formatting for PreToolUse
+  changelog.rs        # Audit log formatting + read-only detection
+  log.rs              # Structured JSON logging to stderr
+  mcp.rs              # MCP tool routing (GitHub, Atlassian, Datadog)
+  worktree/
+    mod.rs            # Creation, restore, ensure_for_repo (with retry)
+    git.rs            # Git command helpers (fetch, branch resolution)
+    cleanup.rs        # Removal, pruning, rollback
+  bin/
+    session_start.rs  # SessionStart hook entry point
+    permissions.rs    # PreToolUse hook entry point
+    changelog_bin.rs  # PostToolUse hook entry point
+    session_end.rs    # SessionEnd hook entry point
+    ensure_worktree.rs # On-demand worktree creation
+```
+
+### Dependencies
+
+Just 5 crates. No async runtime, no network dependencies, no proc macros:
+
+| Crate       | Purpose                      |
+|-------------|------------------------------|
+| serde       | JSON deserialization (hooks)  |
+| serde_json  | JSON serialization (output)   |
+| regex       | Git safety pattern matching   |
+| flate2      | Gzip compression (log archival) |
+| libc        | POSIX flock (concurrent safety) |
+
+### Binary Sizes (release, LTO + strip)
+
+| Binary            | Size   |
+|-------------------|--------|
+| `session-start`   | 512 KB |
+| `permissions`     | 1.4 MB |
+| `changelog`       | 1.4 MB |
+| `session-end`     | 444 KB |
+| `ensure-worktree` | 396 KB |
+
+## (Recommended) Defense-in-Depth Deny Rules
+
+Fallback protection in case a hook fails to load. Add to `~/.claude/settings.json`:
 
 ```jsonc
 {
@@ -119,10 +295,9 @@ Defense-in-depth fallback in case a hook fails to load:
 }
 ```
 
-### 5. Add worktree instructions to CLAUDE.md
+## Worktree Instructions for Claude
 
-Claude needs to know how to work with worktrees. Add something like this to
-your project's `CLAUDE.md`:
+Add to your project's `CLAUDE.md` so Claude knows how to work with worktrees:
 
 ```markdown
 ## Git Worktrees (Session Isolation)
@@ -137,100 +312,18 @@ When the permissions hook denies a write with WORKTREE_MISSING:<repo>,
 run `ensure-worktree <repo>` to create a worktree on-demand, then retry.
 ```
 
-### Verify
+## Logo Prompt
 
-Start a new Claude Code session inside your workspace. You should see:
+The logo was generated with the following prompt (for Gemini, Midjourney, etc.):
 
-```
-Active worktrees for this session:
-  <repo>: /path/to/repo/.worktrees/<short-id>/ (branch: wt/<short-id>)
-```
-
-If you start from the workspace root (not inside any repo), no worktrees are
-created at startup — they'll be created lazily on first write.
-
-## How Worktrees Work
-
-```
-Session Start
-  │
-  ├─ Inside a git repo?
-  │   └─ YES → create worktree immediately (eager)
-  │   └─ NO  → no worktrees yet
-  │
-  ▼
-During Session
-  │
-  ├─ Claude writes to repo without worktree
-  │   └─ permissions hook denies: WORKTREE_MISSING:<repo>
-  │   └─ Claude runs: ensure-worktree <repo>
-  │   └─ Retries write using .worktrees/<short-id>/ path (lazy)
-  │
-  ▼
-Session End
-  │
-  └─ Worktrees removed, logs gzipped, PID markers cleaned
-```
-
-**Eager path**: `session-start` detects the git repo under PWD and creates a
-worktree from `origin/<default-branch>`. Alternatively, set `CLAUDE_WORKTREES`
-env var to pre-specify repos: `CLAUDE_WORKTREES=repo-a:main,repo-b:develop`.
-
-**Lazy path**: `permissions` denies writes to repos without worktrees.
-`ensure-worktree` creates one on-demand (idempotent — safe to call twice).
-
-## Safety Guarantees
-
-- **8 git safety patterns**: Force push, push to main, delete tags, hard reset, etc.
-- **Path sandboxing**: System paths blocked, dangerous dotfiles require confirmation
-- **Worktree isolation**: Each session gets its own worktree per repo
-- **Panic = deny**: Hooks never fail open on crash
-- **Config persistence**: `.agents/`, `CLAUDE.md` always go to main checkout
-
-## Development
-
-```bash
-make build            # Dev build (fast)
-make test             # Run all unit tests
-make release          # Optimized + stripped release build
-make install          # Build release and copy binaries to bin/
-make deploy           # Build release and deploy to ~/.local/share/muzzle/
-make lint             # clippy with -D warnings
-make fmt              # Check formatting
-make fmt-fix          # Auto-fix formatting
-make sizes            # Show release binary sizes
-make test-one NAME=x  # Run single test by name
-```
-
-## Architecture
-
-```
-src/
-  lib.rs              # Library root (re-exports all modules)
-  config.rs           # Constants, path helpers (workspace resolution)
-  session.rs          # Session ID resolution via PPID walk + spec file I/O
-  sandbox.rs          # Path sandboxing (7 rules + worktree enforcement)
-  gitcheck.rs         # 8 git safety regex patterns + worktree enforcement
-  output.rs           # JSON response formatting for PreToolUse
-  changelog.rs        # Audit log formatting + read-only detection
-  mcp.rs              # MCP tool routing (GitHub, Atlassian, Datadog, etc.)
-  worktree/
-    mod.rs            # Worktree creation, restore, ensure_for_repo
-    git.rs            # Git command helpers (fetch, branch resolution)
-    cleanup.rs        # Worktree removal, pruning, rollback
-  bin/
-    session_start.rs  # SessionStart hook
-    permissions.rs    # PreToolUse hook
-    changelog_bin.rs  # PostToolUse hook
-    session_end.rs    # SessionEnd hook
-    ensure_worktree.rs # On-demand worktree creation binary
-```
-
-## Dependencies
-
-Only 4 crates: `serde`, `serde_json`, `regex`, `flate2`. No async runtime,
-no network deps.
+> Minimal flat vector logo on a white background. A friendly dog muzzle (the
+> nose guard, not a face) made of fine geometric wireframe lines, in dark
+> steel blue (#2C3E50). Inside the muzzle cage, a subtle code bracket `{ }`
+> is visible, glowing in electric teal (#1ABC9C). The muzzle has a small
+> padlock where the strap buckle would be. Clean, modern, techy — suitable
+> for a GitHub repo icon at 200x200px. No text, no background shapes, no
+> gradients.
 
 ## License
 
-Internal tooling. Not published as a crate.
+[MIT](LICENSE) -- Frits Vlaanderen

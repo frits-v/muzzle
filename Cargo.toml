@@ -1,8 +1,10 @@
 [package]
 name = "muzzle"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Session isolation and workspace sandboxing for AI coding agents"
+license = "MIT"
+repository = "https://github.com/frits-v/muzzle"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -10,6 +12,9 @@ serde_json = "1"
 regex = "1"
 flate2 = "1"
 libc = "0.2"
+
+[dev-dependencies]
+proptest = "1"
 
 [lib]
 name = "muzzle"
