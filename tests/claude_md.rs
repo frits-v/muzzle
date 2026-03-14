@@ -63,9 +63,7 @@ fn claude_md_binary_count_matches() {
         .find_map(|line| {
             if let Some(pos) = line.find("producing ") {
                 let rest = &line[pos + "producing ".len()..];
-                rest.split_whitespace()
-                    .next()
-                    .and_then(|n| n.parse().ok())
+                rest.split_whitespace().next().and_then(|n| n.parse().ok())
             } else {
                 None
             }
@@ -82,31 +80,43 @@ fn claude_md_binary_count_matches() {
 
 // --- 2. Architecture tree completeness ---
 
+/// States for the architecture block parser.
+enum ArchState {
+    /// Haven't seen "## Architecture" yet.
+    Searching,
+    /// Seen the heading, waiting for the opening ``` fence.
+    WaitingForFence,
+    /// Inside the code block, collecting .rs filenames.
+    InBlock,
+}
+
 #[test]
 fn claude_md_architecture_tree_complete() {
     let claude = read_file("CLAUDE.md");
     let actual_files = rs_files_in(Path::new("src"));
 
-    // Extract .rs filenames from the architecture code block
-    let mut in_arch_block = false;
+    let mut state = ArchState::Searching;
     let mut arch_files = HashSet::new();
     for line in claude.lines() {
-        if line.trim() == "```" {
-            if in_arch_block {
-                break;
+        match state {
+            ArchState::Searching => {
+                if line.starts_with("## Architecture") {
+                    state = ArchState::WaitingForFence;
+                }
             }
-            // Start of first code block after "## Architecture"
-            continue;
-        }
-        if line.starts_with("## Architecture") {
-            in_arch_block = false; // next ``` starts the block
-        }
-        if line.contains("src/") || in_arch_block {
-            in_arch_block = true;
-            // Extract foo.rs from lines like "  lib.rs   # description"
-            for word in line.split_whitespace() {
-                if word.ends_with(".rs") {
-                    arch_files.insert(word.to_string());
+            ArchState::WaitingForFence => {
+                if line.trim().starts_with("```") {
+                    state = ArchState::InBlock;
+                }
+            }
+            ArchState::InBlock => {
+                if line.trim() == "```" {
+                    break;
+                }
+                for word in line.split_whitespace() {
+                    if word.ends_with(".rs") {
+                        arch_files.insert(word.to_string());
+                    }
                 }
             }
         }
@@ -163,11 +173,7 @@ fn claude_md_dependency_count_matches() {
             in_deps = false;
             continue;
         }
-        if in_deps
-            && !trimmed.is_empty()
-            && !trimmed.starts_with('#')
-            && trimmed.contains('=')
-        {
+        if in_deps && !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed.contains('=') {
             actual += 1;
         }
     }
@@ -227,8 +233,7 @@ fn claude_md_make_targets_exist() {
         .filter_map(|line| {
             if let Some(target) = line.split(':').next() {
                 let t = target.trim();
-                if !t.is_empty() && !t.starts_with('#') && !t.starts_with('.') && !t.contains(' ')
-                {
+                if !t.is_empty() && !t.starts_with('#') && !t.starts_with('.') && !t.contains(' ') {
                     return Some(t.to_string());
                 }
             }
@@ -236,10 +241,36 @@ fn claude_md_make_targets_exist() {
         })
         .collect();
 
-    // Extract "make <target>" references from CLAUDE.md
+    // Extract "make <target>" references from CLAUDE.md, but only inside
+    // backtick-fenced code blocks or inline backtick spans to avoid matching
+    // natural-language prose like "make sure" or "make use of".
     let mut missing = Vec::new();
+    let mut in_code_block = false;
     for line in claude.lines() {
-        let mut rest = line;
+        if line.trim().starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+
+        // Scan code blocks fully, and inline backtick spans in prose lines
+        let search_text = if in_code_block {
+            line.to_string()
+        } else {
+            // Extract only backtick-quoted spans from prose lines
+            let mut spans = String::new();
+            let mut in_backtick = false;
+            for ch in line.chars() {
+                if ch == '`' {
+                    in_backtick = !in_backtick;
+                    spans.push(' ');
+                } else if in_backtick {
+                    spans.push(ch);
+                }
+            }
+            spans
+        };
+
+        let mut rest = search_text.as_str();
         while let Some(pos) = rest.find("make ") {
             let after = &rest[pos + 5..];
             let target: String = after
