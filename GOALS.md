@@ -82,11 +82,11 @@ Target: < 10ms p99.
 
 ### 9. Graceful degradation when workspace is missing
 
-Handle edge case where workspace dir (`~/src/cn/`) doesn't exist. Currently
-untested. Should fail with a clear error, not panic or produce confusing
-messages.
+Added `config::validate_workspace()` with early validation in `ensure-worktree`.
+Tests cover both existing and missing workspace paths.
+`session-start` already exits cleanly via `is_in_workspace()` check.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 10. Maintain test coverage above 100 tests
 

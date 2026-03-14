@@ -10,6 +10,7 @@
 //!   0 — success (worktree path on stdout)
 //!   1 — error (message on stderr)
 
+use muzzle::config;
 use muzzle::session;
 use muzzle::worktree;
 
@@ -32,6 +33,12 @@ fn run() {
     }
 
     let repo = &args[1];
+
+    // Validate workspace exists before attempting anything
+    if let Err(msg) = config::validate_workspace() {
+        eprintln!("ERROR: {}", msg);
+        std::process::exit(1);
+    }
 
     // Resolve session (read-write mode — this binary is invoked as a Bash command)
     let sess = session::resolve();
