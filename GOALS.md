@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 153 tests (130 unit + 13 integration + 10 proptest). Do not regress.
+Current: 158 tests (130 unit + 18 integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
@@ -125,9 +125,9 @@ Scripts must guard `bash >= 4.0` when using `mapfile` or associative arrays.
 
 ### 13. CLAUDE.md stays in sync with codebase
 
-`scripts/check-claude-md.sh` validates that CLAUDE.md claims (binary count,
-architecture tree, dependency count/names, test count, make targets) match
-the actual codebase. Must pass on every commit.
+`tests/claude_md.rs` validates that CLAUDE.md claims (binary count,
+architecture tree, dependency count/names, make targets) match the actual
+codebase. Runs as a Rust integration test — portable, no shell dependency.
 
 **Steer:** increase
 
@@ -151,7 +151,7 @@ an automated check — enforced by convention and CLAUDE.md instructions.
 | five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
-| claude-md-valid | `bash scripts/check-claude-md.sh`                        | 3      | CLAUDE.md matches codebase      |
+| claude-md-valid | `cargo test --test claude_md`                            | 3      | CLAUDE.md matches codebase      |
 | shellcheck      | `shellcheck scripts/*.sh`                                | 3      | Shell scripts pass shellcheck   |
 | shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |

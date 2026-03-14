@@ -223,6 +223,11 @@ pub fn is_under(path: &Path, dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Mutex for tests that mutate MUZZLE_WORKSPACE env var.
+    /// Prevents races with tests that call workspace() and expect the default.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_short_id() {
@@ -235,6 +240,7 @@ mod tests {
 
     #[test]
     fn test_is_under() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let ws = workspace();
         assert!(is_under(&ws.join("web-app/app.py"), &ws));
         assert!(is_under(&ws, &ws));
@@ -246,6 +252,7 @@ mod tests {
 
     #[test]
     fn test_pid_marker_path() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let path = pid_marker_path(12345);
         let expected = workspace().join(".claude-tmp/by-pid/12345");
         assert_eq!(path, expected);
@@ -253,6 +260,7 @@ mod tests {
 
     #[test]
     fn test_spec_file_path() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let path = spec_file_path("test-session-id");
         let expected = workspace().join(".claude-worktrees-test-session-id.env");
         assert_eq!(path, expected);
@@ -260,6 +268,7 @@ mod tests {
 
     #[test]
     fn test_changelog_path() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let path = changelog_path("test-session-id");
         let expected = workspace().join(".claude-changelog-test-session-id.md");
         assert_eq!(path, expected);
@@ -267,6 +276,7 @@ mod tests {
 
     #[test]
     fn test_session_tmp_dir() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let path = session_tmp_dir("test-session-id");
         let expected = workspace().join(".claude-tmp/test-session-id");
         assert_eq!(path, expected);
@@ -274,12 +284,14 @@ mod tests {
 
     #[test]
     fn test_home_and_workspace_not_empty() {
+        let _lock = ENV_LOCK.lock().unwrap();
         assert!(!home().as_os_str().is_empty());
         assert!(!workspace().as_os_str().is_empty());
     }
 
     #[test]
     fn test_validate_workspace_exists() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // Use a known-existing directory so this works on CI too
         let tmp = std::env::temp_dir();
         std::env::set_var("MUZZLE_WORKSPACE", tmp.as_os_str());
@@ -290,6 +302,7 @@ mod tests {
 
     #[test]
     fn test_validate_workspace_missing() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // Point MUZZLE_WORKSPACE at a nonexistent path
         std::env::set_var("MUZZLE_WORKSPACE", "/tmp/muzzle-nonexistent-test-dir");
         let result = validate_workspace();
