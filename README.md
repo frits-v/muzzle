@@ -314,15 +314,15 @@ run `ensure-worktree <repo>` to create a worktree on-demand, then retry.
 
 ## Logo Prompt
 
-The logo was generated with the following prompt (for Gemini, Midjourney, etc.):
+The logo was generated with the following prompt (ChatGPT/DALL-E):
 
-> Minimal flat vector logo on a white background. A friendly dog muzzle (the
-> nose guard, not a face) made of fine geometric wireframe lines, in dark
-> steel blue (#2C3E50). Inside the muzzle cage, a subtle code bracket `{ }`
-> is visible, glowing in electric teal (#1ABC9C). The muzzle has a small
-> padlock where the strap buckle would be. Clean, modern, techy — suitable
+> Minimal flat vector logo on a transparent background. A friendly dog face
+> viewed from the front, stylized with clean geometric lines, in electric
+> teal (#1ABC9C). The dog wears a small muzzle (nose guard) made of fine
+> wireframe lines. A subtle code bracket `{ }` is integrated into the muzzle
+> design. Small padlock on the muzzle strap. Clean, modern, techy — suitable
 > for a GitHub repo icon at 200x200px. No text, no background shapes, no
-> gradients.
+> gradients. PNG with alpha transparency.
 
 ## License
 
