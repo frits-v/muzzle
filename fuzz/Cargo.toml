@@ -1,0 +1,45 @@
+[package]
+name = "muzzle-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.muzzle]
+path = ".."
+
+# Workspace exclusion — cargo-fuzz manages its own build
+[workspace]
+
+[[bin]]
+name = "fuzz_git_safety"
+path = "fuzz_targets/fuzz_git_safety.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_sandbox"
+path = "fuzz_targets/fuzz_sandbox.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_bash_write_paths"
+path = "fuzz_targets/fuzz_bash_write_paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_extract_repo"
+path = "fuzz_targets/fuzz_extract_repo.rs"
+test = false
+doc = false
+bench = false

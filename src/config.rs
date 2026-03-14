@@ -11,27 +11,35 @@ pub const PPID_WALK_DEPTH: usize = 3;
 /// PID marker directory (relative to Workspace).
 pub const PID_MARKER_DIR: &str = ".claude-tmp/by-pid";
 
-/// Spec file prefix/suffix (relative to Workspace).
+/// Worktree spec file name prefix (relative to Workspace).
 pub const SPEC_FILE_PREFIX: &str = ".claude-worktrees-";
+/// Worktree spec file name suffix.
 pub const SPEC_FILE_SUFFIX: &str = ".env";
 
-/// Changelog prefix/suffix (relative to Workspace).
+/// Changelog file name prefix (relative to Workspace).
 pub const CHANGELOG_PREFIX: &str = ".claude-changelog-";
+/// Changelog file name suffix.
 pub const CHANGELOG_SUFFIX: &str = ".md";
 
-/// Trace prefix/suffix (relative to Workspace).
+/// Trace log file name prefix (relative to Workspace).
 pub const TRACE_PREFIX: &str = ".claude-trace-";
+/// Trace log file name suffix.
 pub const TRACE_SUFFIX: &str = ".md";
 
-/// Atlassian rate limiting.
-pub const ATLASSIAN_RATE_WINDOW: u64 = 300; // seconds (5 min)
+/// Atlassian rate-limit sliding window in seconds (5 min).
+pub const ATLASSIAN_RATE_WINDOW: u64 = 300;
+/// Max Atlassian write calls per rate window before prompting.
 pub const ATLASSIAN_RATE_LIMIT: usize = 3;
 
-/// Cleanup thresholds.
+/// Max age (hours) before orphaned worktrees are pruned.
 pub const ORPHAN_WORKTREE_MAX_AGE_HOURS: u64 = 24;
+/// Max age (days) before stale spec files are removed.
 pub const STALE_SPEC_FILE_MAX_AGE_DAYS: u64 = 7;
+/// Max age (days) before stale temp directories are removed.
 pub const STALE_TEMP_DIR_MAX_AGE_DAYS: u64 = 7;
+/// Max age (days) before stale PID markers are removed.
 pub const STALE_PID_MARKER_MAX_AGE_DAYS: u64 = 1;
+/// Safety cap on cleanup iterations to avoid runaway loops.
 pub const MAX_CLEANUP_ITERATIONS: usize = 50;
 
 /// Resolve $HOME from environment or dirs fallback.
@@ -171,6 +179,23 @@ pub fn short_id(session_id: &str) -> String {
     }
 }
 
+/// Validate that the workspace directory exists.
+///
+/// Returns `Ok(path)` if it exists, `Err(message)` with a clear error otherwise.
+/// Use this at binary entry points for early failure with actionable guidance.
+pub fn validate_workspace() -> Result<PathBuf, String> {
+    let ws = workspace();
+    if ws.is_dir() {
+        Ok(ws)
+    } else {
+        Err(format!(
+            "Workspace directory does not exist: {}. \
+             Set MUZZLE_WORKSPACE or create the directory.",
+            ws.display()
+        ))
+    }
+}
+
 /// Check if PWD is under the workspace.
 pub fn is_in_workspace() -> bool {
     let Ok(pwd) = std::env::current_dir() else {
@@ -251,5 +276,27 @@ mod tests {
     fn test_home_and_workspace_not_empty() {
         assert!(!home().as_os_str().is_empty());
         assert!(!workspace().as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_validate_workspace_exists() {
+        // Use a known-existing directory so this works on CI too
+        let tmp = std::env::temp_dir();
+        std::env::set_var("MUZZLE_WORKSPACE", tmp.as_os_str());
+        let result = validate_workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(result.is_ok(), "workspace should exist: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_workspace_missing() {
+        // Point MUZZLE_WORKSPACE at a nonexistent path
+        std::env::set_var("MUZZLE_WORKSPACE", "/tmp/muzzle-nonexistent-test-dir");
+        let result = validate_workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("does not exist"), "error: {}", msg);
+        assert!(msg.contains("MUZZLE_WORKSPACE"), "error: {}", msg);
     }
 }

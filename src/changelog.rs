@@ -14,9 +14,12 @@ use std::sync::LazyLock;
 /// Input from Claude Code's PostToolUse hook.
 #[derive(Debug, Deserialize)]
 pub struct ToolInput {
+    /// The Claude Code tool name (e.g. "Bash", "Edit", "Write").
     pub tool_name: String,
+    /// JSON payload sent to the tool.
     #[serde(default)]
     pub tool_input: serde_json::Value,
+    /// JSON payload returned by the tool.
     #[serde(default)]
     pub tool_output: serde_json::Value,
 }
@@ -24,17 +27,26 @@ pub struct ToolInput {
 /// Common fields from tool_input.
 #[derive(Debug, Default)]
 pub struct InputFields {
+    /// Bash command string (for Bash tool calls).
     pub command: String,
+    /// Target file path (for Edit/Write tool calls).
     pub file_path: String,
+    /// Target notebook path (for NotebookEdit tool calls).
     pub notebook_path: String,
+    /// GitHub repository (owner/name) for MCP GitHub tools.
     pub repo: String,
+    /// Title field (PR title, issue title, etc.).
     pub title: String,
+    /// Git branch name.
     pub branch: String,
+    /// Jira project key (e.g. "CN").
     pub project_key: String,
+    /// Summary field (Jira issue summary).
     pub summary: String,
 }
 
 impl InputFields {
+    /// Extract fields from a JSON value (tool_input payload).
     pub fn from_value(v: &serde_json::Value) -> Self {
         Self {
             command: v
@@ -84,11 +96,14 @@ impl InputFields {
 /// Common fields from tool_output.
 #[derive(Debug, Default)]
 pub struct OutputFields {
+    /// Standard output from the tool.
     pub stdout: String,
+    /// Standard error from the tool.
     pub stderr: String,
 }
 
 impl OutputFields {
+    /// Extract fields from a JSON value (tool_output payload).
     pub fn from_value(v: &serde_json::Value) -> Self {
         Self {
             stdout: v

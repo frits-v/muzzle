@@ -2,7 +2,7 @@
 //!
 //! FR-MR-1 through FR-MR-7: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig routing.
 //!
-//! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/<session-id>/rate-limits/`.
+//! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
 //! as the Go version). The rate limit state needs the session ID, passed as a parameter.
 
@@ -13,8 +13,11 @@ use std::time::SystemTime;
 /// MCP routing decision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum McpDecision {
+    /// Tool call is safe to execute without prompting.
     Allow,
+    /// Tool call is blocked with a reason message.
     Deny(String),
+    /// Tool call requires user confirmation with a reason message.
     Ask(String),
 }
 
@@ -101,7 +104,7 @@ fn route_github(action: &str) -> McpDecision {
 
 /// FR-MR-2: Atlassian MCP routing.
 ///
-/// Rate limiting for `createJiraIssue`: writes counters to `.claude-tmp/<session-id>/rate-limits/`.
+/// Rate limiting for `createJiraIssue`: writes counters to `.claude-tmp/{session-id}/rate-limits/`.
 /// This is acceptable scratch-space I/O (same exception as Go version).
 fn route_atlassian(action: &str, session_id: Option<&str>) -> McpDecision {
     // Read-only
@@ -161,7 +164,7 @@ fn route_atlassian(action: &str, session_id: Option<&str>) -> McpDecision {
 /// Check if the Atlassian rate limit is exceeded.
 ///
 /// Returns true if the count of calls within the rate window exceeds the limit.
-/// Writes timestamps to `.claude-tmp/<session-id>/rate-limits/<tool>`.
+/// Writes timestamps to `.claude-tmp/{session-id}/rate-limits/{tool}`.
 /// This is an acceptable side effect (scratch space only).
 fn check_atlassian_rate_limit(tool: &str, session_id: &str) -> bool {
     let rate_dir = config::rate_limit_dir(session_id);
