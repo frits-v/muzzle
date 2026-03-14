@@ -72,9 +72,12 @@ fn remove_worktrees(sess: &session::State) {
     for entry in &entries {
         let (dirty, err) = worktree::remove(entry);
         if dirty {
-            eprintln!(
-                "WARN: Worktree {} has uncommitted changes — skipping removal",
-                entry.wt_path
+            muzzle::log::emit_full(
+                "WARN",
+                "session-end",
+                "worktree has uncommitted changes — skipping removal",
+                None,
+                Some(&entry.wt_path),
             );
             let _ = append_to_changelog(
                 &sess.changelog_path,
@@ -86,7 +89,13 @@ fn remove_worktrees(sess: &session::State) {
             continue;
         }
         if let Some(e) = err {
-            eprintln!("WARN: Failed to remove worktree {}: {}", entry.wt_path, e);
+            muzzle::log::emit_full(
+                "WARN",
+                "session-end",
+                &format!("failed to remove worktree {}", entry.wt_path),
+                None,
+                Some(&e),
+            );
         }
     }
 

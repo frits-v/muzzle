@@ -90,10 +90,12 @@ fn create_from_env(sess: &State, env_specs: &str) -> CreateResult {
 
         let repo_path = config::workspace().join(repo);
         if !git::is_git_repo(&repo_path) {
-            eprintln!(
-                "WARN: Skipping {} — not a git repo at {}",
-                repo,
-                repo_path.display()
+            crate::log::emit_full(
+                "WARN",
+                "session-start",
+                &format!("skipping {} — not a git repo", repo),
+                None,
+                Some(&repo_path.display().to_string()),
             );
             continue;
         }
