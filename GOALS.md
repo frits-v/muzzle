@@ -31,7 +31,62 @@ paths with spaces. Each edge case gets a test.
 
 **Steer:** increase
 
-### 3. Maintain test coverage above 100 tests
+### 3. Fuzz regex-heavy path parsing
+
+Set up `cargo-fuzz` targets for the regex-heavy modules (gitcheck, sandbox,
+config). Regex + user-controlled paths = classic attack surface. Goal: zero
+panics/crashes on arbitrary input.
+
+**Steer:** increase
+
+### 4. Add property-based tests for sandbox decisions
+
+Current tests are example-based. Add proptest strategies that generate random
+paths, tool contexts, and session states to verify sandbox invariants hold
+under arbitrary input combinations.
+
+**Steer:** increase
+
+### 5. Structured JSON logging from all binaries
+
+Replace ad-hoc `eprintln!` calls with structured JSON output to stderr. This
+enables log aggregation, filtering, and correlation across session lifecycle
+events.
+
+**Steer:** increase
+
+### 6. Semantic versioning with cargo-release
+
+Set up `cargo-release` for proper release workflow. Tag releases, generate
+changelogs, publish binary artifacts. Currently stuck at `0.1.0` with no
+release process.
+
+**Steer:** increase
+
+### 7. Improve cargo doc coverage
+
+Ensure > 80% of public items have doc comments. Several public functions and
+types lack documentation. Add `#![warn(missing_docs)]` to lib.rs.
+
+**Steer:** increase
+
+### 8. Benchmark permissions binary cold-start latency
+
+Every tool call pays the permissions binary startup cost. Add a benchmark
+(criterion or hyperfine) to track cold-start latency and catch regressions.
+Target: < 10ms p99.
+
+**Steer:** increase
+
+### 9. Graceful degradation when workspace is missing
+
+Handle edge case where workspace dir (`~/src/cn/`) doesn't exist. Currently
+untested. Should fail with a clear error, not panic or produce confusing
+messages.
+
+**Steer:** increase
+
+### 10. Maintain test coverage above 100 tests
 
 Current: 116 tests (103 unit + 13 integration). Do not regress.
 
