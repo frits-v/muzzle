@@ -10,3 +10,4 @@
 {"cycle":10,"target":"directive-6-semver-release","result":"improved","canonical_sha":"ccba7fc","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:57:51-07:00"}
 {"cycle":11,"target":"directive-8-benchmark-coldstart","result":"improved","canonical_sha":"dc69a98","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:59:36-07:00"}
 {"cycle":12,"target":"directive-3-fuzz-targets","result":"improved","canonical_sha":"63ef7c2","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T22:06:59-07:00"}
+{"cycle":13,"target":"directive-4-proptest","result":"improved","canonical_sha":"6606a5c","goals_passing":9,"goals_total":9,"tests_before":143,"tests_after":153,"timestamp":"2026-03-13T22:09:13-07:00"}

@@ -51,11 +51,12 @@ across all targets, zero crashes. Run with nightly:
 
 ### 4. Add property-based tests for sandbox decisions
 
-Current tests are example-based. Add proptest strategies that generate random
-paths, tool contexts, and session states to verify sandbox invariants hold
-under arbitrary input combinations.
+Added 10 property-based tests via proptest covering sandbox and gitcheck
+invariants: system paths always denied, no panics on arbitrary input,
+/tmp paths via Bash allowed, force-push always blocked, safe git never
+blocked. Each property runs 256 cases by default.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 5. Structured JSON logging from all binaries
 
@@ -102,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 140 tests (127 unit + 13 integration). Do not regress.
+Current: 153 tests (130 unit + 13 integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
