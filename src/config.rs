@@ -171,6 +171,23 @@ pub fn short_id(session_id: &str) -> String {
     }
 }
 
+/// Validate that the workspace directory exists.
+///
+/// Returns `Ok(path)` if it exists, `Err(message)` with a clear error otherwise.
+/// Use this at binary entry points for early failure with actionable guidance.
+pub fn validate_workspace() -> Result<PathBuf, String> {
+    let ws = workspace();
+    if ws.is_dir() {
+        Ok(ws)
+    } else {
+        Err(format!(
+            "Workspace directory does not exist: {}. \
+             Set MUZZLE_WORKSPACE or create the directory.",
+            ws.display()
+        ))
+    }
+}
+
 /// Check if PWD is under the workspace.
 pub fn is_in_workspace() -> bool {
     let Ok(pwd) = std::env::current_dir() else {
@@ -251,5 +268,24 @@ mod tests {
     fn test_home_and_workspace_not_empty() {
         assert!(!home().as_os_str().is_empty());
         assert!(!workspace().as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_validate_workspace_exists() {
+        // Default workspace should exist in the dev environment
+        let result = validate_workspace();
+        assert!(result.is_ok(), "workspace should exist: {:?}", result);
+    }
+
+    #[test]
+    fn test_validate_workspace_missing() {
+        // Point MUZZLE_WORKSPACE at a nonexistent path
+        std::env::set_var("MUZZLE_WORKSPACE", "/tmp/muzzle-nonexistent-test-dir");
+        let result = validate_workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("does not exist"), "error: {}", msg);
+        assert!(msg.contains("MUZZLE_WORKSPACE"), "error: {}", msg);
     }
 }
