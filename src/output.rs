@@ -6,6 +6,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookResponse {
+    /// The hook-specific payload (present for PreToolUse responses).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hook_specific_output: Option<HookSpecificOutput>,
 }
@@ -14,8 +15,11 @@ pub struct HookResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookSpecificOutput {
+    /// Hook event type (always "PreToolUse" for permission hooks).
     pub hook_event_name: String,
+    /// One of "allow", "deny", or "ask".
     pub permission_decision: String,
+    /// Human-readable reason for deny/ask decisions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_decision_reason: Option<String>,
 }
@@ -23,8 +27,11 @@ pub struct HookSpecificOutput {
 /// Permission decision enum for internal use.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Decision {
+    /// Permit the tool call without prompting.
     Allow,
+    /// Block the tool call with a reason message.
     Deny(String),
+    /// Prompt the user for confirmation with a reason message.
     Ask(String),
 }
 

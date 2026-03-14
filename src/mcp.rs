@@ -13,8 +13,11 @@ use std::time::SystemTime;
 /// MCP routing decision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum McpDecision {
+    /// Tool call is safe to execute without prompting.
     Allow,
+    /// Tool call is blocked with a reason message.
     Deny(String),
+    /// Tool call requires user confirmation with a reason message.
     Ask(String),
 }
 

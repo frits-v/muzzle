@@ -67,10 +67,11 @@ release process.
 
 ### 7. Improve cargo doc coverage
 
-Ensure > 80% of public items have doc comments. Several public functions and
-types lack documentation. Add `#![warn(missing_docs)]` to lib.rs.
+Added `#![warn(missing_docs)]` to lib.rs with crate-level documentation.
+Documented all public structs, enums, variants, fields, constants, and
+associated functions across all modules. Zero rustdoc warnings with `-D warnings`.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 8. Benchmark permissions binary cold-start latency
 
