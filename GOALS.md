@@ -31,6 +31,13 @@ Fuzz and stress-test the permission boundaries: symlink traversal, path
 canonicalization, race conditions in worktree creation, Unicode filenames,
 paths with spaces. Each edge case gets a test.
 
+Added `normalize_dot_segments()` to fix dot-dot traversal bypass in
+`resolve_path()`. 22 new tests covering: symlink traversal (2), path
+traversal (2), spaces (2), Unicode (1), double-slash (1), `/private/`
+prefix (1), empty/long paths (2), trailing slashes (1), case sensitivity
+(1), null session (1), worktree escapes (2), `normalize_dot_segments`
+unit tests (5), WORKTREE_MISSING (1), `/dev/fd` range (1).
+
 **Steer:** increase
 
 ### 3. Fuzz regex-heavy path parsing
@@ -91,7 +98,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 116 tests (103 unit + 13 integration). Do not regress.
+Current: 140 tests (127 unit + 13 integration). Do not regress.
 
 **Steer:** increase
 
