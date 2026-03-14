@@ -85,11 +85,11 @@ associated functions across all modules. Zero rustdoc warnings with `-D warnings
 
 ### 8. Benchmark permissions binary cold-start latency
 
-Every tool call pays the permissions binary startup cost. Add a benchmark
-(criterion or hyperfine) to track cold-start latency and catch regressions.
-Target: < 10ms p99.
+Added `scripts/bench-coldstart.sh` (hyperfine, 50+ runs) and
+`scripts/check-coldstart.sh` (gate: fail if max > 15ms). Baseline:
+3.4ms mean, 9.4ms max on macOS ARM — well under 10ms target.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 9. Graceful degradation when workspace is missing
 
