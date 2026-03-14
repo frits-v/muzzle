@@ -27,7 +27,7 @@ struct HookInput {
 fn main() {
     let result = std::panic::catch_unwind(run);
     if result.is_err() {
-        eprintln!("ERROR: session-start hook panicked");
+        muzzle::log::error("session-start", "hook panicked");
         std::process::exit(1);
     }
 }
@@ -41,14 +41,26 @@ fn run() {
     // Read hook input from stdin
     let mut data = String::new();
     if let Err(e) = io::stdin().read_to_string(&mut data) {
-        eprintln!("muzzle/session-start: failed to read stdin: {}", e);
+        muzzle::log::emit_full(
+            "ERROR",
+            "session-start",
+            "failed to read stdin",
+            None,
+            Some(&e.to_string()),
+        );
         std::process::exit(1);
     }
 
     let input: HookInput = match serde_json::from_str(&data) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("muzzle/session-start: failed to parse JSON: {}", e);
+            muzzle::log::emit_full(
+                "ERROR",
+                "session-start",
+                "failed to parse JSON",
+                None,
+                Some(&e.to_string()),
+            );
             std::process::exit(1);
         }
     };
@@ -62,13 +74,25 @@ fn run() {
 
     // Register PID marker (all sources)
     if let Err(e) = session::register_pid(&session_id) {
-        eprintln!("muzzle/session-start: failed to register PID: {}", e);
+        muzzle::log::emit_full(
+            "WARN",
+            "session-start",
+            "failed to register PID",
+            None,
+            Some(&e.to_string()),
+        );
         // Non-fatal: continue even if PID registration fails
     }
 
     // Ensure session temp dir exists
     if let Err(e) = fs::create_dir_all(&sess.tmp_dir) {
-        eprintln!("muzzle/session-start: failed to create temp dir: {}", e);
+        muzzle::log::emit_full(
+            "WARN",
+            "session-start",
+            "failed to create temp dir",
+            None,
+            Some(&e.to_string()),
+        );
     }
 
     match source.as_str() {
@@ -99,7 +123,13 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
     // Create fresh changelog
     let header = format!("## Session: {} ({})\n\n", timestamp, sess.id);
     if let Err(e) = fs::write(&sess.changelog_path, &header) {
-        eprintln!("muzzle/session-start: failed to create changelog: {}", e);
+        muzzle::log::emit_full(
+            "WARN",
+            "session-start",
+            "failed to create changelog",
+            None,
+            Some(&e.to_string()),
+        );
     }
 
     // Update convenience symlink
@@ -116,7 +146,7 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
                 result.error
             ),
         );
-        eprintln!("muzzle/session-start: {}", result.error);
+        muzzle::log::error("session-start", &result.error);
         emit_context(&format!(
             "\nWARNING: Worktree creation failed. All repo writes will be blocked.\nError: {}",
             result.error
@@ -127,7 +157,13 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
     if !result.entries.is_empty() {
         // Save spec file
         if let Err(e) = session::write_spec_file(&sess.spec_file, &result.entries) {
-            eprintln!("muzzle/session-start: failed to save spec file: {}", e);
+            muzzle::log::emit_full(
+                "ERROR",
+                "session-start",
+                "failed to save spec file",
+                None,
+                Some(&e.to_string()),
+            );
         }
         // Refresh worktree state
         sess.worktree_active = true;

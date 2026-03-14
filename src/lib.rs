@@ -13,6 +13,7 @@
 pub mod changelog;
 pub mod config;
 pub mod gitcheck;
+pub mod log;
 pub mod mcp;
 pub mod output;
 pub mod sandbox;
