@@ -68,11 +68,12 @@ Each log entry includes: `ts`, `level`, `bin`, `msg`, optional `session` and
 
 ### 6. Semantic versioning with cargo-release
 
-Set up `cargo-release` for proper release workflow. Tag releases, generate
-changelogs, publish binary artifacts. Currently stuck at `0.1.0` with no
-release process.
+Added `release.toml` for cargo-release with changelog replacement rules,
+tag format (`v{{version}}`), and crates.io publish disabled. Created
+`CHANGELOG.md` with v0.1.0 and v0.2.0 entries. Bumped to v0.2.0 and tagged.
+Usage: `cargo release patch|minor|major [--execute]`.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 7. Improve cargo doc coverage
 
