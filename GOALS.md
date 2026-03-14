@@ -58,11 +58,13 @@ under arbitrary input combinations.
 
 ### 5. Structured JSON logging from all binaries
 
-Replace ad-hoc `eprintln!` calls with structured JSON output to stderr. This
-enables log aggregation, filtering, and correlation across session lifecycle
-events.
+Added `src/log.rs` module with `emit()`, `emit_full()`, `error()`, `warn()`
+functions producing JSON lines to stderr. Converted all 17 `eprintln!` calls
+across 4 files (session_start, session_end, ensure_worktree, worktree/mod).
+Each log entry includes: `ts`, `level`, `bin`, `msg`, optional `session` and
+`detail` fields. 3 unit tests for format, JSON validity, and escaping.
 
-**Steer:** increase
+**Steer:** complete
 
 ### 6. Semantic versioning with cargo-release
 
