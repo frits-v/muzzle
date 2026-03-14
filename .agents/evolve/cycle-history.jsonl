@@ -9,3 +9,4 @@
 {"cycle":9,"target":"directive-5-structured-logging","result":"improved","canonical_sha":"2e707f6","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:56:31-07:00"}
 {"cycle":10,"target":"directive-6-semver-release","result":"improved","canonical_sha":"ccba7fc","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:57:51-07:00"}
 {"cycle":11,"target":"directive-8-benchmark-coldstart","result":"improved","canonical_sha":"dc69a98","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:59:36-07:00"}
+{"cycle":12,"target":"directive-3-fuzz-targets","result":"improved","canonical_sha":"63ef7c2","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T22:06:59-07:00"}

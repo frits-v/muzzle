@@ -42,11 +42,12 @@ unit tests (5), WORKTREE_MISSING (1), `/dev/fd` range (1).
 
 ### 3. Fuzz regex-heavy path parsing
 
-Set up `cargo-fuzz` targets for the regex-heavy modules (gitcheck, sandbox,
-config). Regex + user-controlled paths = classic attack surface. Goal: zero
-panics/crashes on arbitrary input.
+Added 4 fuzz targets via `cargo-fuzz`: `fuzz_git_safety`, `fuzz_sandbox`,
+`fuzz_bash_write_paths`, `fuzz_extract_repo`. Initial run: ~4M iterations
+across all targets, zero crashes. Run with nightly:
+`cargo +nightly fuzz run <target> -- -max_total_time=60`
 
-**Steer:** increase
+**Steer:** complete
 
 ### 4. Add property-based tests for sandbox decisions
 
