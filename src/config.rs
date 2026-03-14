@@ -280,8 +280,11 @@ mod tests {
 
     #[test]
     fn test_validate_workspace_exists() {
-        // Default workspace should exist in the dev environment
+        // Use a known-existing directory so this works on CI too
+        let tmp = std::env::temp_dir();
+        std::env::set_var("MUZZLE_WORKSPACE", tmp.as_os_str());
         let result = validate_workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(result.is_ok(), "workspace should exist: {:?}", result);
     }
 

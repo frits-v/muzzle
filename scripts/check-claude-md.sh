@@ -140,9 +140,11 @@ claimed_tests=""
 claimed_tests="$(grep -oE '^[0-9]+ tests' "${CLAUDE_MD}" | grep -oE '^[0-9]+' | head -1)"
 
 if [[ -n "${claimed_tests}" ]]; then
+  test_output=""
+  test_output="$(cargo test 2>&1)"
   actual_tests=""
   actual_tests="$(
-    cargo test 2>&1 \
+    printf '%s\n' "${test_output}" \
       | grep -oE '[0-9]+ passed' \
       | grep -oE '[0-9]+' \
       | awk '{s+=$1} END{print s}'
