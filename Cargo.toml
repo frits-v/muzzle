@@ -3,6 +3,8 @@ name = "muzzle"
 version = "0.1.0"
 edition = "2021"
 description = "Session isolation and workspace sandboxing for AI coding agents"
+license = "MIT"
+repository = "https://github.com/frits-v/muzzle"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

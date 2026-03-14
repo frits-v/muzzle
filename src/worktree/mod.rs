@@ -262,7 +262,7 @@ fn create_single_worktree(
 ///
 /// Used by the `ensure-worktree` binary for lazy worktree creation.
 /// Validates the repo is a git repo under workspace, then delegates to
-/// `create_single_worktree()` with no branch (ephemeral wt/<short-id>).
+/// `create_single_worktree()` with no branch (ephemeral `wt/<short-id>`).
 /// Returns the spec entry for the created worktree.
 pub fn ensure_for_repo(sess: &State, repo: &str) -> Result<SpecEntry, WorktreeError> {
     let repo_path = config::workspace().join(repo);
