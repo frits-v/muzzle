@@ -164,6 +164,25 @@ includes lint, fmt, test, build, and all custom gates.
 
 **Steer:** increase
 
+### 17. GitHub Actions SHA-pinned with supply chain lint
+
+All `uses:` references in `.github/workflows/` must be pinned to full
+40-char commit SHAs with a version comment (e.g.
+`actions/checkout@11bd7190... # v4.2.2`). No rolling tags (`@v4`, `@main`).
+
+Every workflow change must pass `actionlint` and `zizmor --pedantic` in CI.
+
+**Steer:** increase
+
+### 18. Automated releases via release-please + cosign
+
+Conventional commits on `main` trigger release-please to open a Release PR.
+Merging that PR creates a GitHub Release. The release workflow builds macOS
+binaries (arm64 + x86_64), signs with cosign (keyless OIDC), and uploads
+tarballs + `.sigstore.json` bundles + `SHA256SUMS.txt` to the release.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
@@ -182,3 +201,6 @@ includes lint, fmt, test, build, and all custom gates.
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
 | ci-green        | `gh pr checks <pr-number>`                               | 5      | All CI checks pass before merge |
 | pr-comments     | `gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq 'map(select(.created_at > "{last_push_time}")) | length'` → 0 after 5-10 min wait | 3 | No new review comments after last push |
+| actionlint      | `actionlint .github/workflows/*.yml`                         | 3      | Workflow files pass actionlint    |
+| zizmor          | `zizmor --pedantic .github/workflows/`                       | 3      | Workflow files pass zizmor        |
+| sha-pinned      | `grep -rE 'uses:.*@[a-z]' .github/workflows/ \| grep -v '#'` returns 0 lines | 3 | All actions SHA-pinned |

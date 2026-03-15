@@ -67,7 +67,25 @@ Muzzle is a set of Rust binaries that plug into Claude Code's [hook system](http
 - [Claude Code](https://claude.ai/code) with hooks support
 - A workspace directory containing your git repos
 
-### Install
+### Install from Release (recommended)
+
+Download the latest signed release from [GitHub Releases](https://github.com/frits-v/muzzle/releases):
+
+```bash
+# macOS ARM (Apple Silicon)
+curl -sSLO https://github.com/frits-v/muzzle/releases/latest/download/muzzle-aarch64-apple-darwin.tar.gz
+mkdir -p ~/.local/share/muzzle/bin
+tar xzf muzzle-aarch64-apple-darwin.tar.gz -C ~/.local/share/muzzle/bin
+
+# Verify signature (optional, requires cosign)
+curl -sSLO https://github.com/frits-v/muzzle/releases/latest/download/muzzle-aarch64-apple-darwin.tar.gz.sigstore.json
+cosign verify-blob muzzle-aarch64-apple-darwin.tar.gz \
+  --bundle muzzle-aarch64-apple-darwin.tar.gz.sigstore.json \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-identity-regexp="https://github.com/frits-v/muzzle/"
+```
+
+### Install from Source
 
 ```bash
 git clone https://github.com/frits-v/muzzle.git
@@ -204,6 +222,11 @@ All 5 binaries emit JSON lines to stderr for machine-parseable log aggregation:
 ## Development
 
 ```bash
+mise run ci           # Run all CI gates locally (preferred)
+mise run lint         # All lints (Rust + shell + workflows)
+mise run test:all     # All tests (unit + integration + claude_md)
+mise run workflow-lint # actionlint + zizmor pedantic
+
 make build            # Dev build (fast)
 make test             # All tests (158 passing)
 make release          # Optimized + LTO + stripped

@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-latest
+    permissions:
+      contents: read # checkout
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "${BUILD_TARGET}"
+
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-release-${{ matrix.target }}-
+
+      - name: Build release binaries
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "${BUILD_TARGET}"
+
+      - name: Package binaries
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          mkdir -p staging
+          for bin in session-start permissions changelog session-end ensure-worktree; do
+            cp "target/${BUILD_TARGET}/release/${bin}" staging/
+          done
+          tar czf "muzzle-${BUILD_TARGET}.tar.gz" -C staging .
+
+      - name: Verify binary sizes (< 5 MB each)
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          for bin in staging/*; do
+            size=$(stat -f%z "$bin")
+            if (( size > 5242880 )); then
+              echo "FAIL: $(basename "$bin") is ${size} bytes (> 5MB)"
+              exit 1
+            fi
+            echo "OK: $(basename "$bin") (${size} bytes)"
+          done
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: muzzle-${{ matrix.target }}
+          path: muzzle-${{ matrix.target }}.tar.gz
+
+  sign-and-release:
+    name: Sign and upload
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # upload release assets
+      id-token: write  # cosign OIDC keyless signing
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+
+      - name: Sign tarballs
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          cd dist
+          for f in ./*.tar.gz; do
+            cosign sign-blob "$f" \
+              --bundle "${f}.sigstore.json" \
+              --yes
+          done
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          cd dist
+          shasum -a 256 ./*.tar.gz > SHA256SUMS.txt
+          cosign sign-blob SHA256SUMS.txt \
+            --bundle SHA256SUMS.txt.sigstore.json \
+            --yes
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          gh release upload "${RELEASE_TAG}" \
+            dist/*.tar.gz \
+            dist/*.sigstore.json \
+            dist/SHA256SUMS.txt \
+            --repo "${REPO}"
