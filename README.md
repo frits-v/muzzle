@@ -82,7 +82,7 @@ curl -sSLO https://github.com/frits-v/muzzle/releases/latest/download/muzzle-aar
 cosign verify-blob muzzle-aarch64-apple-darwin.tar.gz \
   --bundle muzzle-aarch64-apple-darwin.tar.gz.sigstore.json \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  --certificate-identity-regexp="https://github.com/frits-v/muzzle/"
+  --certificate-identity="https://github.com/frits-v/muzzle/.github/workflows/release.yml@refs/tags/vX.Y.Z"
 ```
 
 ### Install from Source

@@ -203,4 +203,4 @@ tarballs + `.sigstore.json` bundles + `SHA256SUMS.txt` to the release.
 | pr-comments     | `gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq 'map(select(.created_at > "{last_push_time}")) | length'` → 0 after 5-10 min wait | 3 | No new review comments after last push |
 | actionlint      | `actionlint .github/workflows/*.yml`                         | 3      | Workflow files pass actionlint    |
 | zizmor          | `zizmor --pedantic .github/workflows/`                       | 3      | Workflow files pass zizmor        |
-| sha-pinned      | `grep -rE 'uses:.*@[a-z]' .github/workflows/ \| grep -v '#'` returns 0 lines | 3 | All actions SHA-pinned |
+| sha-pinned      | `grep -rE 'uses:.*@[a-z][^#]*$' .github/workflows/` returns 0 lines          | 3 | All actions SHA-pinned |

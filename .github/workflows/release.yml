@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           for bin in staging/*; do
-            size=$(stat -f%z "$bin")
+            size=$(stat -f%z "$bin" 2>/dev/null || stat -c%s "$bin")
             if (( size > 5242880 )); then
               echo "FAIL: $(basename "$bin") is ${size} bytes (> 5MB)"
               exit 1
