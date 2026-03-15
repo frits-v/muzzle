@@ -14,7 +14,7 @@
   <a href="https://github.com/frits-v/muzzle/releases/latest"><img src="https://img.shields.io/github/v/tag/frits-v/muzzle?label=version&sort=semver" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust">
-  <img src="https://img.shields.io/badge/tests-153-brightgreen.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-158-brightgreen.svg" alt="Tests">
 </p>
 
 ---
@@ -205,7 +205,7 @@ All 5 binaries emit JSON lines to stderr for machine-parseable log aggregation:
 
 ```bash
 make build            # Dev build (fast)
-make test             # All tests (153 passing)
+make test             # All tests (158 passing)
 make release          # Optimized + LTO + stripped
 make deploy           # Build and install to ~/.local/share/muzzle/
 make lint             # clippy -D warnings
@@ -223,10 +223,10 @@ bash scripts/bench-coldstart.sh                # Benchmark permissions latency
 | Category     | Count | Framework |
 |--------------|------:|-----------|
 | Unit         |   130 | `#[test]` |
-| Integration  |    13 | `#[test]` |
+| Integration  |    18 | `#[test]` |
 | Property     |    10 | proptest  |
 | Fuzz targets |     4 | cargo-fuzz |
-| **Total**    | **153+4** |       |
+| **Total**    | **158+4** |       |
 
 ### Architecture
 
@@ -314,15 +314,15 @@ run `ensure-worktree <repo>` to create a worktree on-demand, then retry.
 
 ## Logo Prompt
 
-The logo was generated with the following prompt (for Gemini, Midjourney, etc.):
+The logo was generated with the following prompt (ChatGPT/DALL-E):
 
-> Minimal flat vector logo on a white background. A friendly dog muzzle (the
-> nose guard, not a face) made of fine geometric wireframe lines, in dark
-> steel blue (#2C3E50). Inside the muzzle cage, a subtle code bracket `{ }`
-> is visible, glowing in electric teal (#1ABC9C). The muzzle has a small
-> padlock where the strap buckle would be. Clean, modern, techy — suitable
+> Minimal flat vector logo on a transparent background. A friendly dog face
+> viewed from the front, stylized with clean geometric lines, in electric
+> teal (#1ABC9C). The dog wears a small muzzle (nose guard) made of fine
+> wireframe lines. A subtle code bracket `{ }` is integrated into the muzzle
+> design. Small padlock on the muzzle strap. Clean, modern, techy — suitable
 > for a GitHub repo icon at 200x200px. No text, no background shapes, no
-> gradients.
+> gradients. PNG with alpha transparency.
 
 ## License
 
