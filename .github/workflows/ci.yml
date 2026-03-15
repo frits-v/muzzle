@@ -48,11 +48,11 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
       - name: License exists
         run: test -f LICENSE
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Shell lint (shellcheck + shfmt)
         run: |
           set -euo pipefail
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
-          mise install
           mise exec -- shellcheck scripts/*.sh
           mise exec -- shfmt -d -i 2 -ci -bn scripts/*.sh
 
@@ -140,11 +140,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Install mise tools
-        run: |
-          set -euo pipefail
-          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
-          mise install
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: actionlint
         run: mise exec -- actionlint
       - name: zizmor (pedantic)
