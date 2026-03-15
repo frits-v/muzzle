@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 153 tests (130 unit + 13 integration + 10 proptest). Do not regress.
+Current: 158 tests (130 unit + 18 integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
@@ -125,9 +125,9 @@ Scripts must guard `bash >= 4.0` when using `mapfile` or associative arrays.
 
 ### 13. CLAUDE.md stays in sync with codebase
 
-`scripts/check-claude-md.sh` validates that CLAUDE.md claims (binary count,
-architecture tree, dependency count/names, test count, make targets) match
-the actual codebase. Must pass on every commit.
+`tests/claude_md.rs` validates that CLAUDE.md claims (binary count,
+architecture tree, dependency count/names, make targets) match the actual
+codebase. Runs as a Rust integration test — portable, no shell dependency.
 
 **Steer:** increase
 
@@ -136,6 +136,31 @@ the actual codebase. Must pass on every commit.
 Always rebase on `origin/<default-branch>` before pushing a feature branch.
 PRs with merge conflicts must never be submitted. This is a process gate, not
 an automated check — enforced by convention and CLAUDE.md instructions.
+
+**Steer:** increase
+
+### 15. PR review comments must be addressed
+
+All review comments on PRs (human or bot) must be resolved before merge.
+For each comment: either fix the issue, or if `/council` disagrees with the
+suggestion, respond to the comment with a reasoned explanation. No comment
+should be left unaddressed.
+
+For each addressed comment: reply to the thread explaining what was fixed
+(or why you disagree), then resolve the conversation. This creates a clear
+audit trail and marks the thread as done in GitHub's UI.
+
+After pushing fixes, wait 5-10 minutes for automated reviewers (Greptile, etc.)
+to re-review, then poll for new comments. Repeat until no new comments appear.
+The review loop is: push → wait → check → address → push → ... → converge.
+
+**Steer:** increase
+
+### 16. CI must be green before merge
+
+PRs must not be merged with failing CI checks. If CI fails after push,
+diagnose and fix the failure before requesting review or merge. This
+includes lint, fmt, test, build, and all custom gates.
 
 **Steer:** increase
 
@@ -151,7 +176,9 @@ an automated check — enforced by convention and CLAUDE.md instructions.
 | five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
-| claude-md-valid | `bash scripts/check-claude-md.sh`                        | 3      | CLAUDE.md matches codebase      |
+| claude-md-valid | `cargo test --test claude_md`                            | 3      | CLAUDE.md matches codebase      |
 | shellcheck      | `shellcheck scripts/*.sh`                                | 3      | Shell scripts pass shellcheck   |
 | shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
+| ci-green        | `gh pr checks <pr-number>`                               | 5      | All CI checks pass before merge |
+| pr-comments     | `gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq 'map(select(.created_at > "{last_push_time}")) | length'` → 0 after 5-10 min wait | 3 | No new review comments after last push |

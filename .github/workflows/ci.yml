@@ -46,12 +46,8 @@ jobs:
         run: cargo test
       - name: Integration tests
         run: cargo test --test integration
-      - name: Install bash 4+ for mapfile support
-        run: |
-          brew install bash
-          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - name: CLAUDE.md matches codebase
-        run: bash scripts/check-claude-md.sh
+        run: cargo test --test claude_md
 
   build:
     name: Release Build

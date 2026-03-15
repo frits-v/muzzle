@@ -103,8 +103,7 @@ evolve: cycle 13 -- directive-4-proptest improved
 `// nolint`, `# shellcheck disable=...`, or any lint suppression annotation without
 explicit user sign-off. If a lint rule fires, fix the underlying issue instead.
 
-The only pre-approved suppression is `SC2016` in `check-claude-md.sh` (regex
-patterns in single quotes are intentional).
+There are currently no pre-approved suppressions.
 
 ## Shell Style
 
@@ -121,7 +120,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-153 tests (130 unit + 13 integration + 10 proptest) plus 4 fuzz targets.
+158 tests (130 unit + 18 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
