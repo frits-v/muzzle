@@ -146,6 +146,14 @@ For each comment: either fix the issue, or if `/council` disagrees with the
 suggestion, respond to the comment with a reasoned explanation. No comment
 should be left unaddressed.
 
+For each addressed comment: reply to the thread explaining what was fixed
+(or why you disagree), then resolve the conversation. This creates a clear
+audit trail and marks the thread as done in GitHub's UI.
+
+After pushing fixes, wait 5-10 minutes for automated reviewers (Greptile, etc.)
+to re-review, then poll for new comments. Repeat until no new comments appear.
+The review loop is: push → wait → check → address → push → ... → converge.
+
 **Steer:** increase
 
 ### 16. CI must be green before merge
@@ -173,4 +181,4 @@ includes lint, fmt, test, build, and all custom gates.
 | shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
 | ci-green        | `gh pr checks <pr-number>`                               | 5      | All CI checks pass before merge |
-| pr-comments     | (process gate)                                           | 3      | All review comments addressed   |
+| pr-comments     | `gh api repos/{owner}/{repo}/pulls/{pr}/comments --jq 'map(select(.created_at > "{last_push_time}")) | length'` → 0 after 5-10 min wait | 3 | No new review comments after last push |

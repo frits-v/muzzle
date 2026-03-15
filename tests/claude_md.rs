@@ -35,15 +35,20 @@ fn rs_files_in(dir: &Path, root: &Path) -> HashSet<String> {
     files
 }
 
-/// Extract all backtick-quoted words from text.
+/// Extract all backtick-quoted tokens from text.
+///
+/// Splits each backtick span on non-identifier characters so that
+/// `serde::Serialize` yields both `serde` and `Serialize`.
 fn backtick_words(text: &str) -> HashSet<String> {
     let mut words = HashSet::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '`' {
-            let word: String = chars.by_ref().take_while(|&c| c != '`').collect();
-            if !word.is_empty() {
-                words.insert(word);
+            let span: String = chars.by_ref().take_while(|&c| c != '`').collect();
+            for token in span.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
+                if !token.is_empty() {
+                    words.insert(token.to_string());
+                }
             }
         }
     }
@@ -113,7 +118,7 @@ fn claude_md_architecture_tree_complete() {
                 }
             }
             ArchState::InBlock => {
-                if line.trim() == "```" {
+                if line.trim().starts_with("```") {
                     break;
                 }
                 let indent = line.len() - line.trim_start().len();
@@ -228,7 +233,7 @@ fn claude_md_mentions_all_dependencies() {
             in_deps = false;
             continue;
         }
-        if in_deps && !trimmed.is_empty() && !trimmed.starts_with('#') {
+        if in_deps && !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed.contains('=') {
             if let Some(name) = trimmed.split(['=', ' ']).next() {
                 if !name.is_empty() && !backticks.contains(name) {
                     missing.push(name.to_string());
