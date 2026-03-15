@@ -18,16 +18,16 @@ fn read_file(name: &str) -> String {
     fs::read_to_string(name).unwrap_or_else(|e| panic!("{name} not found: {e}"))
 }
 
-fn rs_files_in(dir: &Path) -> HashSet<String> {
+fn rs_files_in(dir: &Path, root: &Path) -> HashSet<String> {
     let mut files = HashSet::new();
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                files.extend(rs_files_in(&path));
+                files.extend(rs_files_in(&path, root));
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    files.insert(name.to_string());
+                if let Ok(rel) = path.strip_prefix(root) {
+                    files.insert(rel.to_string_lossy().into_owned());
                 }
             }
         }
@@ -93,10 +93,13 @@ enum ArchState {
 #[test]
 fn claude_md_architecture_tree_complete() {
     let claude = read_file("CLAUDE.md");
-    let actual_files = rs_files_in(Path::new("src"));
+    let src = Path::new("src");
+    let actual_files = rs_files_in(src, src);
 
     let mut state = ArchState::Searching;
     let mut arch_files = HashSet::new();
+    // Track directory context from indentation (indent_level, dir_name).
+    let mut dir_stack: Vec<(usize, String)> = Vec::new();
     for line in claude.lines() {
         match state {
             ArchState::Searching => {
@@ -113,9 +116,29 @@ fn claude_md_architecture_tree_complete() {
                 if line.trim() == "```" {
                     break;
                 }
+                let indent = line.len() - line.trim_start().len();
+                // Pop directories at same or deeper indent level.
+                while let Some(&(prev_indent, _)) = dir_stack.last() {
+                    if prev_indent >= indent {
+                        dir_stack.pop();
+                    } else {
+                        break;
+                    }
+                }
                 for word in line.split_whitespace() {
+                    if word.starts_with('#') {
+                        break;
+                    }
+                    if word.ends_with('/') && word != "src/" {
+                        let dir_name = word.trim_end_matches('/');
+                        dir_stack.push((indent, dir_name.to_string()));
+                        break;
+                    }
                     if word.ends_with(".rs") {
-                        arch_files.insert(word.to_string());
+                        let prefix: String =
+                            dir_stack.iter().map(|(_, d)| format!("{d}/")).collect();
+                        arch_files.insert(format!("{prefix}{word}"));
+                        break;
                     }
                 }
             }
