@@ -4,6 +4,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      minimum-release-age: 7 days
     groups:
       github-actions:
         patterns: ["*"]
@@ -12,8 +14,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      minimum-release-age: 7 days
 
   - package-ecosystem: cargo
     directory: /fuzz
     schedule:
       interval: weekly
+    cooldown:
+      minimum-release-age: 7 days

@@ -90,6 +90,7 @@ run = "cargo build --release"
 [tasks.sizes]
 description = "Show release binary sizes"
 run = """
+set -euo pipefail
 cargo build --release
 for bin in session-start permissions changelog session-end ensure-worktree; do
   size=$(stat -f%z "target/release/$bin" 2>/dev/null || stat -c%s "target/release/$bin")
