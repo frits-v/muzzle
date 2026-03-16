@@ -52,7 +52,8 @@ make test-one NAME=x  # Run single test by name
 - **Three-layer sandbox**: Session resolution -> context-aware path checking -> git safety regex
 - **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`
 - **Lazy worktrees**: `WORKTREE_MISSING:<repo>` denials trigger `ensure-worktree` on-demand
-- **Config persistence**: `.agents/`, `CLAUDE.md`, `.claude/` always write to main checkout, never worktrees
+- **Config persistence**: `.agents/`, `.claude/` redirect to main checkout when gitignored; if tracked by git (dir exists in worktree), allowed in-place
+- **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
 - **Panic -> deny**: All hooks catch panics and deny rather than fail open
 
 ## Commit Convention
@@ -125,7 +126,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-194 tests (166 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
+197 tests (169 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
@@ -134,6 +135,7 @@ Test patterns:
 - Sandbox tests construct paths from `config::workspace()` for portability
 - Property tests use proptest strategies (256 cases each by default)
 - Fuzz targets require nightly: `cargo +nightly fuzz run <target>`
+- Use fictional repo names in tests (e.g. `acme-api`, `web-app`), never real company or project names
 
 ## Releases
 

@@ -127,7 +127,10 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-7: Delete semver tags (local and remote)
     if RE_DELETE_SEMVER_TAG.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Deleting semantic version tags is not allowed. Release a new patch version instead.".into(),
+            "BLOCKED: Deleting semantic version tags is not allowed. \
+             To sync local tags with remote: git fetch --prune origin \"+refs/tags/*:refs/tags/*\". \
+             To fix a released version: release a new patch instead."
+                .into(),
         );
     }
     if RE_DELETE_REMOTE_TAG.is_match(cmd) {
@@ -203,8 +206,9 @@ pub fn check_worktree_enforcement(
                     return Some(crate::worktree_missing_msg(&repo));
                 }
                 return Some(format!(
-                    "BLOCKED: Git op on main checkout ({}). Use worktree: {}/{}/.worktrees/{}",
-                    repo, ws_str, repo, short_id
+                    "BLOCKED: Git op on main checkout ({repo}). \
+                     Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
+                     Tip: run git -C <wt-path> fetch origin before creating new branches"
                 ));
             }
         }
@@ -223,8 +227,9 @@ pub fn check_worktree_enforcement(
                     return Some(crate::worktree_missing_msg(&repo));
                 }
                 return Some(format!(
-                    "BLOCKED: Git op on main checkout ({}). Use worktree: {}/{}/.worktrees/{}",
-                    repo, ws_str, repo, short_id
+                    "BLOCKED: Git op on main checkout ({repo}). \
+                     Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
+                     Tip: run git -C <wt-path> fetch origin before creating new branches"
                 ));
             }
         }
@@ -522,6 +527,19 @@ mod tests {
                 "expected BLOCK for semver tag delete {:?}",
                 cmd
             );
+        }
+    }
+
+    #[test]
+    fn test_delete_local_semver_tag_suggests_fetch_prune() {
+        let r = check_git_safety("git tag -d v1.0.0");
+        if let GitResult::Block(msg) = r {
+            assert!(
+                msg.contains("git fetch --prune origin"),
+                "local tag delete should suggest fetch --prune, got: {msg}"
+            );
+        } else {
+            panic!("expected Block");
         }
     }
 

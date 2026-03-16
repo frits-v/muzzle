@@ -108,15 +108,33 @@ pub fn check_path_with_context(
 
                 // FR-WE-3: Allow writes to worktree paths
                 if resolved.contains("/.worktrees/") {
-                    // But redirect .agents/ writes back to main checkout for persistence.
-                    // E.g. <repo>/.worktrees/<id>/.agents/foo.md → <repo>/.agents/foo.md
+                    // Redirect .agents/ and .claude/ writes to main checkout for
+                    // persistence. Uses `git check-ignore` to distinguish tracked
+                    // files (allow in worktree) from gitignored files (redirect).
                     const WORKTREES_SEG: &str = "/.worktrees/";
                     if let Some(wt_idx) = resolved.find(WORKTREES_SEG) {
                         let after_wt = &resolved[wt_idx..]; // "/.worktrees/<id>/..."
-                                                            // Find the slash after the worktree ID
                         if let Some(id_slash) = after_wt[WORKTREES_SEG.len()..].find('/') {
                             let after_id = &after_wt[WORKTREES_SEG.len() + id_slash..]; // "/..." after ID
                             if is_persistent_repo_config(after_id) {
+                                let wt_root = &resolved
+                                    [..wt_idx + WORKTREES_SEG.len() + id_slash];
+                                // git check-ignore exit codes:
+                                //   0 = path IS ignored
+                                //   1 = path is NOT ignored (tracked or untracked)
+                                //  128 = error (not a git repo, bad path, etc.)
+                                // Only exit 1 means "allow in worktree". Everything
+                                // else (0, 128, spawn failure) → redirect (fail-closed).
+                                let is_tracked = std::process::Command::new("git")
+                                    .args(["-C", wt_root, "check-ignore", "-q", &resolved])
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .status()
+                                    .map(|s| s.code() == Some(1))
+                                    .unwrap_or(false);
+                                if is_tracked {
+                                    return PathDecision::Allow;
+                                }
                                 let repo_prefix = &resolved[..wt_idx];
                                 return PathDecision::Deny(format!(
                                     "REDIRECT: config path must persist across sessions. Write to: {}{}",
@@ -331,19 +349,32 @@ fn is_private_system_path(path: &str) -> bool {
 /// `subpath` starts with "/" — e.g. "/.agents/foo.md", "/CLAUDE.md".
 /// Trailing slashes in `starts_with` prevent false positives (e.g. `.agentsfoo`).
 fn is_persistent_repo_config(subpath: &str) -> bool {
+    // .agents/ and .claude/ are often gitignored local config. The FR-WE-3 redirect
+    // path uses `git check-ignore` to distinguish: ignored paths redirect to the main
+    // checkout, tracked paths are allowed in the worktree.
     subpath.starts_with("/.agents/")
         || subpath == "/.agents"
         || subpath.starts_with("/.claude/")
         || subpath == "/.claude"
-        || subpath == "/CLAUDE.md"
-        || subpath == "/AGENTS.md"
 }
 
-/// Check if a path is a project config path (FR-WE-4).
+/// Check if a subpath is a committed repo file that should be editable in worktrees.
 ///
-/// Matches both workspace-level config (e.g. `<ws>/.agents/`) and per-repo
-/// config (e.g. `<ws>/ml-pipeline/.agents/`, `<ws>/web-app/CLAUDE.md`).
-/// Per-repo config paths must persist across sessions, not go to worktrees.
+/// Unlike `.agents/` and `.claude/` (gitignored local config), `CLAUDE.md` and
+/// `AGENTS.md` are committed files. They should be editable in worktrees and on
+/// main checkouts — not redirected.
+fn is_committed_repo_file(subpath: &str) -> bool {
+    subpath == "/CLAUDE.md" || subpath == "/AGENTS.md"
+}
+
+/// Check if a path is a project config or committed repo file (FR-WE-4).
+///
+/// Matches both workspace-level paths (e.g. `<ws>/.agents/`, `<ws>/CLAUDE.md`)
+/// and per-repo paths (e.g. `<ws>/acme-api/.agents/`, `<ws>/web-app/CLAUDE.md`).
+///
+/// Two categories:
+/// - **Persistent config** (`.agents/`, `.claude/`): gitignored, redirect to main checkout
+/// - **Committed files** (`CLAUDE.md`, `AGENTS.md`): version-controlled, allowed in worktrees
 fn is_config_path(path: &str, ws: &str) -> bool {
     let claude_prefix = format!("{}/.claude/", ws);
     let agents_prefix = format!("{}/.agents/", ws);
@@ -363,11 +394,11 @@ fn is_config_path(path: &str, ws: &str) -> bool {
     // Note: trailing slashes in starts_with() prevent false positives like .agentsfoo/
     let ws_prefix = format!("{}/", ws);
     if let Some(rest) = path.strip_prefix(&ws_prefix) {
-        // rest = "ml-pipeline/.agents/foo.md" or "web-app/CLAUDE.md"
+        // rest = "acme-api/.agents/foo.md" or "web-app/CLAUDE.md"
         // First segment is the repo name; after_repo is everything after it
         if let Some(slash_idx) = rest.find('/') {
             let after_repo = &rest[slash_idx..];
-            if is_persistent_repo_config(after_repo) {
+            if is_persistent_repo_config(after_repo) || is_committed_repo_file(after_repo) {
                 return true;
             }
         }
@@ -760,9 +791,9 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Writing to <repo>/.agents/ should be allowed (not redirected to worktree)
         let paths = [
-            format!("{}/ml-pipeline/.agents/learnings/test.md", ws_str),
+            format!("{}/acme-api/.agents/learnings/test.md", ws_str),
             format!("{}/web-app/.agents/handoff/test.md", ws_str),
-            format!("{}/ml-pipeline/.agents/council/report.md", ws_str),
+            format!("{}/acme-api/.agents/council/report.md", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -783,7 +814,7 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Per-repo CLAUDE.md and AGENTS.md should be allowed (not redirected)
         let paths = [
-            format!("{}/ml-pipeline/CLAUDE.md", ws_str),
+            format!("{}/acme-api/CLAUDE.md", ws_str),
             format!("{}/web-app/AGENTS.md", ws_str),
             format!("{}/api-server/.claude/hooks/test.rs", ws_str),
         ];
@@ -804,24 +835,21 @@ mod tests {
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
-        // All persistent config paths inside worktrees should redirect to main checkout.
-        // This verifies the shared is_persistent_repo_config() predicate covers all types.
+        // Gitignored config paths inside worktrees should redirect to main checkout.
+        // CLAUDE.md and AGENTS.md are committed files — they stay in the worktree.
         let paths = [
-            // .agents/
+            // .agents/ (gitignored, redirect)
             format!(
-                "{}/ml-pipeline/.worktrees/abc12345/.agents/learnings/test.md",
+                "{}/acme-api/.worktrees/abc12345/.agents/learnings/test.md",
                 ws_str
             ),
             format!(
                 "{}/web-app/.worktrees/xyz99999/.agents/handoff/notes.md",
                 ws_str
             ),
-            // CLAUDE.md / AGENTS.md
-            format!("{}/ml-pipeline/.worktrees/abc12345/CLAUDE.md", ws_str),
-            format!("{}/web-app/.worktrees/xyz99999/AGENTS.md", ws_str),
-            // .claude/
+            // .claude/ (gitignored, redirect)
             format!(
-                "{}/ml-pipeline/.worktrees/abc12345/.claude/hooks/test.rs",
+                "{}/acme-api/.worktrees/abc12345/.claude/hooks/test.rs",
                 ws_str
             ),
         ];
@@ -852,6 +880,61 @@ mod tests {
     }
 
     #[test]
+    fn test_worktree_committed_files_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        // CLAUDE.md and AGENTS.md are committed repo files — allow in worktrees
+        let paths = [
+            format!("{}/acme-api/.worktrees/abc12345/CLAUDE.md", ws_str),
+            format!("{}/web-app/.worktrees/xyz99999/AGENTS.md", ws_str),
+        ];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "expected ALLOW for committed file in worktree {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_worktree_agents_redirect_when_no_git_repo() {
+        // When the worktree path isn't inside a real git repo, git check-ignore
+        // fails and we fall back to redirect (fail-closed).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        // Fake worktree path (no real git repo behind it)
+        let wt_agents = format!(
+            "{}/nogit-repo/.worktrees/abc12345/.agents",
+            ws_str
+        );
+        std::fs::create_dir_all(&wt_agents).expect("create temp .agents dir");
+
+        let test_path = format!(
+            "{}/nogit-repo/.worktrees/abc12345/.agents/brainstorm/notes.md",
+            ws_str
+        );
+        let result = check_path(&test_path, Some(&sess));
+        // git check-ignore fails (not a git repo) → fail-closed → redirect
+        assert!(
+            matches!(result, PathDecision::Deny(_)),
+            "expected REDIRECT when git check-ignore fails (no git repo), got {:?}",
+            result
+        );
+
+        // Cleanup
+        let repo_root = format!("{}/nogit-repo", ws_str);
+        let _ = std::fs::remove_dir_all(&repo_root);
+    }
+
+    #[test]
     fn test_worktree_non_agents_still_allowed() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
@@ -859,7 +942,7 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Regular worktree files should still be allowed (not redirected)
         let paths = [
-            format!("{}/ml-pipeline/.worktrees/abc12345/dags/train.py", ws_str),
+            format!("{}/acme-api/.worktrees/abc12345/dags/train.py", ws_str),
             format!("{}/web-app/.worktrees/abc12345/app/main.py", ws_str),
         ];
         for p in &paths {
