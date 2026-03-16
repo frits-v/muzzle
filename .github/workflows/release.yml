@@ -117,7 +117,7 @@ jobs:
           set -euo pipefail
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           cd dist
-          shasum -a 256 ./*.tar.gz > SHA256SUMS.txt
+          shasum -a 256 -- *.tar.gz > SHA256SUMS.txt
           cosign sign-blob SHA256SUMS.txt \
             --bundle SHA256SUMS.txt.sigstore.json \
             --yes
@@ -134,4 +134,5 @@ jobs:
             dist/*.tar.gz \
             dist/*.sigstore.json \
             dist/SHA256SUMS.txt \
-            --repo "${REPO}"
+            --repo "${REPO}" \
+            --clobber
