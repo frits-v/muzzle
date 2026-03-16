@@ -183,6 +183,26 @@ tarballs + `.sigstore.json` bundles + `SHA256SUMS.txt` to the release.
 
 **Steer:** increase
 
+### 19. Maximize OpenSSF Scorecard
+
+Current score: 6.1/10. Eight checks already at 10/10 (Dangerous-Workflow,
+Dependency-Update-Tool, Token-Permissions, Binary-Artifacts, Pinned-Dependencies,
+License, Vulnerabilities, Fuzzing). Target: 8.0+/10.
+
+Actionable improvements (ordered by effort):
+- [ ] Add `SECURITY.md` with vulnerability reporting policy (Security-Policy: 0→10)
+- [ ] Enable branch protection: require status checks, require PR review (Branch-Protection: 3→8+)
+- [ ] Ensure all PRs go through CI before merge (CI-Tests: 6→10)
+- [ ] Trigger first signed release via release-please (Signed-Releases: -1→10)
+- [ ] Add GitHub code scanning / SAST workflow (SAST: not yet scored)
+
+Not actionable (time/structural):
+- Maintained (0/10) — repo < 90 days old, self-resolves
+- Contributors (0/10) — single-org project
+- CII-Best-Practices (0/10) — requires manual registration at bestpractices.coreinfrastructure.org
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
@@ -204,3 +224,5 @@ tarballs + `.sigstore.json` bundles + `SHA256SUMS.txt` to the release.
 | actionlint      | `actionlint .github/workflows/*.yml`                         | 3      | Workflow files pass actionlint    |
 | zizmor          | `zizmor --pedantic .github/workflows/`                       | 3      | Workflow files pass zizmor        |
 | sha-pinned      | `grep -rE 'uses:.*@[a-z][^#]*$' .github/workflows/` returns 0 lines          | 3 | All actions SHA-pinned |
+| security-policy | `test -f SECURITY.md`                                                         | 3 | Security policy published |
+| branch-protect  | `gh api repos/{owner}/{repo}/branches/main/protection --jq '.required_status_checks.strict'` returns `true` | 5 | Branch protection enabled |
