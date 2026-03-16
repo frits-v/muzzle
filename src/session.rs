@@ -675,7 +675,10 @@ mod tests {
         assert!(!empty.has_session(), "empty state should not have session");
 
         let populated = State::from_id("test-has-session");
-        assert!(populated.has_session(), "populated state should have session");
+        assert!(
+            populated.has_session(),
+            "populated state should have session"
+        );
     }
 
     #[test]
@@ -700,7 +703,10 @@ mod tests {
         fs::write(&spec_path, "  \n\n  \n").expect("write failed");
 
         let entries = read_spec_file(&spec_path).expect("read failed");
-        assert!(entries.is_empty(), "whitespace-only file should yield zero entries");
+        assert!(
+            entries.is_empty(),
+            "whitespace-only file should yield zero entries"
+        );
 
         let _ = fs::remove_file(&spec_path);
         let _ = fs::remove_dir(&tmp);
@@ -747,10 +753,16 @@ mod tests {
         // Non-empty file
         let nonempty_path = tmp.join("nonempty.env");
         fs::write(&nonempty_path, "data").expect("write failed");
-        assert!(spec_file_has_content(&nonempty_path), "non-empty file → true");
+        assert!(
+            spec_file_has_content(&nonempty_path),
+            "non-empty file → true"
+        );
 
         // Missing file
-        assert!(!spec_file_has_content(Path::new("/tmp/muzzle-no-such-file")), "missing file → false");
+        assert!(
+            !spec_file_has_content(Path::new("/tmp/muzzle-no-such-file")),
+            "missing file → false"
+        );
 
         let _ = fs::remove_file(&empty_path);
         let _ = fs::remove_file(&nonempty_path);

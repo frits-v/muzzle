@@ -830,7 +830,10 @@ mod tests {
 
     #[test]
     fn test_extract_git_dir() {
-        assert_eq!(extract_git_dir("git -C /path/to/repo status"), "/path/to/repo");
+        assert_eq!(
+            extract_git_dir("git -C /path/to/repo status"),
+            "/path/to/repo"
+        );
         assert_eq!(extract_git_dir("git status"), "");
         assert_eq!(extract_git_dir("ls -la"), "");
     }
@@ -842,7 +845,10 @@ mod tests {
         // Second non-flag arg after 'push' = branch
         assert_eq!(extract_push_arg("git push origin main", 2), "main");
         // Flags are skipped
-        assert_eq!(extract_push_arg("git push --force-with-lease origin feat", 1), "origin");
+        assert_eq!(
+            extract_push_arg("git push --force-with-lease origin feat", 1),
+            "origin"
+        );
         // No push keyword
         assert_eq!(extract_push_arg("git commit -m msg", 1), "");
         // Not enough args
