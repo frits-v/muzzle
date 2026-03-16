@@ -697,4 +697,64 @@ mod tests {
             paths
         );
     }
+
+    #[test]
+    fn test_is_repo_git_op() {
+        let ws = crate::config::workspace();
+        assert!(is_repo_git_op(&format!(
+            "git -C {}/web-app status",
+            ws.display()
+        )));
+        assert!(!is_repo_git_op("git status"));
+        assert!(!is_repo_git_op("echo hello"));
+    }
+
+    #[test]
+    fn test_is_worktree_management_op() {
+        assert!(is_worktree_management_op("git worktree add /path"));
+        assert!(is_worktree_management_op("git worktree list"));
+        assert!(is_worktree_management_op("git worktree remove /p"));
+        assert!(!is_worktree_management_op("git status"));
+        assert!(!is_worktree_management_op("git branch -a"));
+        // Note: uses contains(), so any mention of "worktree" matches
+        assert!(is_worktree_management_op("echo worktree"));
+    }
+
+    #[test]
+    fn test_safe_git_commands_not_blocked() {
+        let safe = [
+            "git status",
+            "git log --oneline -10",
+            "git diff HEAD",
+            "git branch -a",
+            "git fetch origin",
+            "git stash",
+            "git stash pop",
+            "git add src/main.rs",
+            "git commit -m 'test'",
+        ];
+        for cmd in &safe {
+            let r = check_git_safety(cmd);
+            assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
+        }
+    }
+
+    #[test]
+    fn test_non_git_commands_not_blocked() {
+        let safe = ["ls -la", "cargo build", "cat file.txt", "make test"];
+        for cmd in &safe {
+            let r = check_git_safety(cmd);
+            assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
+        }
+    }
+
+    // Verify that \bgit\b regex matches even inside echo — defense-in-depth
+    #[test]
+    fn test_git_in_echo_still_blocked() {
+        let r = check_git_safety("echo git push --force origin feat");
+        assert!(
+            matches!(r, GitResult::Block(_)),
+            "defense-in-depth: git inside echo is still blocked"
+        );
+    }
 }
