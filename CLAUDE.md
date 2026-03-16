@@ -55,12 +55,14 @@ Before committing any changes, run the full CI gate locally and ensure it passes
 mise run ci
 ```
 
-This runs lint + test + typecheck + docs-check. All checks must be green before committing.
+This runs `cargo fmt --check`, `cargo clippy -D warnings`, `cargo check`, `rustdoc -D warnings`,
+all tests (unit + integration + claude_md), `shellcheck`, `shfmt`, `actionlint`, and
+`zizmor --pedantic`. All checks must be green before committing.
 
 After pushing, poll PR checks and review comments in a single loop for up to 10 minutes:
 
 - Wait for all CI checks to pass (`gh pr checks --watch --fail-fast`)
-- Check for reviewer comments (`gh api repos/{owner}/{repo}/pulls/{number}/comments`)
+- Check for reviewer comments (`gh api repos/frits-v/muzzle/pulls/{number}/comments`)
 - If CI fails: investigate the root cause, fix, push, and restart the loop
 - For each review comment:
   - Actionable feedback (code change requested): implement the fix, push, and reply confirming what changed
