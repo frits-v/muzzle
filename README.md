@@ -12,9 +12,8 @@
 <p align="center">
   <a href="https://github.com/frits-v/muzzle/actions/workflows/ci.yml"><img src="https://github.com/frits-v/muzzle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/frits-v/muzzle/releases/latest"><img src="https://img.shields.io/github/v/tag/frits-v/muzzle?label=version&sort=semver" alt="Version"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/frits-v/muzzle"><img src="https://api.scorecard.dev/projects/github.com/frits-v/muzzle/badge" alt="OpenSSF Scorecard"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust">
-  <img src="https://img.shields.io/badge/tests-158-brightgreen.svg" alt="Tests">
 </p>
 
 ---
