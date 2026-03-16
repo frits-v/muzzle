@@ -193,7 +193,7 @@ Actionable improvements (ordered by effort):
 - [x] Add `SECURITY.md` with vulnerability reporting policy (Security-Policy: 0→10)
 - [x] Enable branch protection: require status checks, dismiss stale reviews (Branch-Protection: 3→8+)
 - [x] Add CodeQL analysis workflow for SAST (`.github/workflows/codeql.yml`)
-- [ ] Ensure all PRs go through CI before merge (CI-Tests: 6→10)
+- [x] Ensure all PRs go through CI before merge (CI-Tests: 6→10) — branch protection requires 4 status checks
 - [ ] Trigger first signed release via release-please (Signed-Releases: -1→10)
 
 Not actionable (time/structural):

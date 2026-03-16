@@ -11,3 +11,6 @@
 {"cycle":11,"target":"directive-8-benchmark-coldstart","result":"improved","canonical_sha":"dc69a98","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T21:59:36-07:00"}
 {"cycle":12,"target":"directive-3-fuzz-targets","result":"improved","canonical_sha":"63ef7c2","goals_passing":9,"goals_total":9,"timestamp":"2026-03-13T22:06:59-07:00"}
 {"cycle":13,"target":"directive-4-proptest","result":"improved","canonical_sha":"6606a5c","goals_passing":9,"goals_total":9,"tests_before":143,"tests_after":153,"timestamp":"2026-03-13T22:09:13-07:00"}
+{"cycle":14,"target":"directive-19-openssf-scorecard","result":"improved","canonical_sha":"2713ab4","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:34:10-07:00"}
+{"cycle":15,"target":"directive-19-codeowners-branch-protect","result":"improved","canonical_sha":"3fafd23","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:35:42-07:00"}
+{"cycle":16,"target":"directive-19-release-please-ci-trigger","result":"improved","canonical_sha":"79544f7","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:40:05-07:00"}
