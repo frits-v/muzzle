@@ -397,6 +397,9 @@ pub fn is_worktree_management_op(cmd: &str) -> bool {
 mod tests {
     use super::*;
 
+    // Use the crate-level ENV_LOCK shared across all modules
+    use crate::ENV_LOCK;
+
     // FR-GS-1: Force push without --force-with-lease
     #[test]
     fn test_force_push_without_lease() {
@@ -574,17 +577,23 @@ mod tests {
 
     #[test]
     fn test_worktree_enforcement_main_checkout_deny() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/web-app status", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/web-app status");
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(reason.is_some(), "expected deny for git on main checkout");
     }
 
     #[test]
     fn test_worktree_enforcement_worktree_allow() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/web-app/.worktrees/abc12345 status", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/web-app/.worktrees/abc12345 status");
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(
             reason.is_none(),
             "expected allow for worktree path, got: {:?}",
@@ -594,9 +603,12 @@ mod tests {
 
     #[test]
     fn test_worktree_enforcement_worktree_management() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/web-app worktree add /path", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/web-app worktree add /path");
         let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(
             reason.is_none(),
             "expected allow for worktree management, got: {:?}",
@@ -606,9 +618,12 @@ mod tests {
 
     #[test]
     fn test_worktree_enforcement_not_active() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/web-app status", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/web-app status");
         let reason = check_worktree_enforcement(&cmd, false, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(reason.is_none(), "expected no enforcement when inactive");
     }
 
@@ -642,9 +657,12 @@ mod tests {
 
     #[test]
     fn test_extract_repo_from_git_op_git_c() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/web-app status", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/web-app status");
         let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert_eq!(
             repo.as_deref(),
             Some("web-app"),
@@ -654,9 +672,12 @@ mod tests {
 
     #[test]
     fn test_extract_repo_from_git_op_git_c_subpath() {
-        let ws = crate::config::workspace();
-        let cmd = format!("git -C {}/ops/modules/foo log", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("git -C {fixed_ws}/ops/modules/foo log");
         let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert_eq!(
             repo.as_deref(),
             Some("ops"),
@@ -666,9 +687,12 @@ mod tests {
 
     #[test]
     fn test_extract_repo_from_git_op_cd_pattern() {
-        let ws = crate::config::workspace();
-        let cmd = format!("cd {}/ops && git status", ws.display());
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("cd {fixed_ws}/ops && git status");
         let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert_eq!(
             repo.as_deref(),
             Some("ops"),
@@ -700,11 +724,11 @@ mod tests {
 
     #[test]
     fn test_is_repo_git_op() {
-        let ws = crate::config::workspace();
-        assert!(is_repo_git_op(&format!(
-            "git -C {}/web-app status",
-            ws.display()
-        )));
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        assert!(is_repo_git_op(&format!("git -C {fixed_ws}/web-app status")));
+        std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(!is_repo_git_op("git status"));
         assert!(!is_repo_git_op("echo hello"));
     }

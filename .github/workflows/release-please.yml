@@ -35,5 +35,5 @@ jobs:
           PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh pr close "${PR_NUMBER}" --repo "${GH_REPO}"
+          gh pr close "${PR_NUMBER}" --repo "${GH_REPO}" || true
           gh pr reopen "${PR_NUMBER}" --repo "${GH_REPO}"

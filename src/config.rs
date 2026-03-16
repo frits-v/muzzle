@@ -223,11 +223,9 @@ pub fn is_under(path: &Path, dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    /// Mutex for tests that mutate MUZZLE_WORKSPACE env var.
-    /// Prevents races with tests that call workspace() and expect the default.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Use the crate-level ENV_LOCK shared across all modules
+    use crate::ENV_LOCK;
 
     #[test]
     fn test_short_id() {

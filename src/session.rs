@@ -333,6 +333,7 @@ fn spec_file_has_content(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ENV_LOCK;
     use std::sync::Mutex;
 
     // Serialize session tests to avoid PPID marker conflicts.
@@ -340,7 +341,8 @@ mod tests {
 
     #[test]
     fn test_resolve_with_id() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         let sess = resolve_with_id("abc12345-6789-0000-1111-222233334444");
@@ -358,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_resolve_ppid_walk_success() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Create a PID marker for our own PPID
@@ -391,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_resolve_ppid_miss() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Remove our direct PPID marker if any
@@ -427,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_resolve_no_marker_dir() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Remove our direct PPID marker
@@ -571,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_resolve_readonly_no_marker_write() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Create a marker NOT at our immediate PPID but at a "grandparent" PID.
@@ -621,7 +623,8 @@ mod tests {
 
     #[test]
     fn test_resolve_readwrite_creates_marker() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Same setup as above but use the read-write variant
@@ -781,7 +784,7 @@ mod tests {
 
     #[test]
     fn test_register_pid() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         let dir = config::pid_marker_dir_path();
