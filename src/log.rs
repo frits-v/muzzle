@@ -101,4 +101,33 @@ mod tests {
             "path with \"quotes\" and \\backslashes\nnewline",
         );
     }
+
+    #[test]
+    fn test_error_convenience() {
+        // Should not panic; calls emit("ERROR", ...)
+        error("test-bin", "something broke");
+    }
+
+    #[test]
+    fn test_warn_convenience() {
+        // Should not panic; calls emit("WARN", ...)
+        warn("test-bin", "heads up");
+    }
+
+    #[test]
+    fn test_emit_full_without_optional_fields() {
+        // None values should not appear in output
+        emit_full("DEBUG", "test-bin", "no extras", None, None);
+    }
+
+    #[test]
+    fn test_emit_full_with_all_fields() {
+        emit_full(
+            "INFO",
+            "session-start",
+            "session created",
+            Some("sess-abc123"),
+            Some("/path/to/workspace"),
+        );
+    }
 }

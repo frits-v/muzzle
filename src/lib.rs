@@ -27,3 +27,24 @@ pub fn worktree_missing_msg(repo: &str) -> String {
          — Run: .claude/hooks/bin/ensure-worktree {repo}"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_worktree_missing_msg_format() {
+        let msg = worktree_missing_msg("my-repo");
+        assert!(msg.starts_with("WORKTREE_MISSING:my-repo"));
+        assert!(msg.contains("ensure-worktree my-repo"));
+    }
+
+    #[test]
+    fn test_worktree_missing_msg_special_chars() {
+        let msg = worktree_missing_msg("repo-with-dashes");
+        assert!(msg.starts_with("WORKTREE_MISSING:repo-with-dashes"));
+
+        let msg = worktree_missing_msg(".dotfile-repo");
+        assert!(msg.starts_with("WORKTREE_MISSING:.dotfile-repo"));
+    }
+}
