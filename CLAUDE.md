@@ -126,7 +126,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-197 tests (169 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
+198 tests (170 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
@@ -178,5 +178,5 @@ Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
 
 ## Dependencies
 
-5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. No async runtime,
+6 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`, `ignore`. No async runtime,
 no network deps, no proc macros.

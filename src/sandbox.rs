@@ -108,9 +108,9 @@ pub fn check_path_with_context(
 
                 // FR-WE-3: Allow writes to worktree paths
                 if resolved.contains("/.worktrees/") {
-                    // Redirect .agents/ and .claude/ writes to main checkout for
-                    // persistence. Uses `git check-ignore` to distinguish tracked
-                    // files (allow in worktree) from gitignored files (redirect).
+                    // Redirect .agents/ and .claude/ writes to main checkout when
+                    // gitignored. If the repo tracks these dirs, allow in worktree.
+                    // Detection: parse <worktree>/.gitignore natively (no process spawn).
                     const WORKTREES_SEG: &str = "/.worktrees/";
                     if let Some(wt_idx) = resolved.find(WORKTREES_SEG) {
                         let after_wt = &resolved[wt_idx..]; // "/.worktrees/<id>/..."
@@ -119,27 +119,18 @@ pub fn check_path_with_context(
                             if is_persistent_repo_config(after_id) {
                                 let wt_root = &resolved
                                     [..wt_idx + WORKTREES_SEG.len() + id_slash];
-                                // git check-ignore exit codes:
-                                //   0 = path IS ignored
-                                //   1 = path is NOT ignored (tracked or untracked)
-                                //  128 = error (not a git repo, bad path, etc.)
-                                // Only exit 1 means "allow in worktree". Everything
-                                // else (0, 128, spawn failure) → redirect (fail-closed).
-                                let is_tracked = std::process::Command::new("git")
-                                    .args(["-C", wt_root, "check-ignore", "-q", &resolved])
-                                    .stdout(std::process::Stdio::null())
-                                    .stderr(std::process::Stdio::null())
-                                    .status()
-                                    .map(|s| s.code() == Some(1))
-                                    .unwrap_or(false);
-                                if is_tracked {
-                                    return PathDecision::Allow;
+                                // Check the actual file path against .gitignore.
+                                // is_dir=false because we're checking a file write.
+                                if is_path_gitignored(wt_root, &resolved, false) {
+                                    let repo_prefix = &resolved[..wt_idx];
+                                    return PathDecision::Deny(format!(
+                                        "REDIRECT: config path must persist across sessions. \
+                                         Write to: {}{}",
+                                        repo_prefix, after_id
+                                    ));
                                 }
-                                let repo_prefix = &resolved[..wt_idx];
-                                return PathDecision::Deny(format!(
-                                    "REDIRECT: config path must persist across sessions. Write to: {}{}",
-                                    repo_prefix, after_id
-                                ));
+                                // Not ignored → tracked by git → allow in worktree
+                                return PathDecision::Allow;
                             }
                         }
                     }
@@ -340,6 +331,27 @@ fn is_private_system_path(path: &str) -> bool {
     path.starts_with("/private/etc/") || path.starts_with("/private/var/")
 }
 
+/// Check if a file path is gitignored at a given root.
+///
+/// Uses the `ignore` crate (from ripgrep) to parse `<root>/.gitignore` with
+/// full gitignore semantics: globs, negation, directory-only patterns,
+/// anchoring, `**/` prefixes, etc.
+///
+/// Returns `true` if ignored, `false` if not ignored or `.gitignore` is absent.
+fn is_path_gitignored(root: &str, path: &str, is_dir: bool) -> bool {
+    use ignore::gitignore::GitignoreBuilder;
+
+    let mut builder = GitignoreBuilder::new(root);
+    let gitignore_path = format!("{}/.gitignore", root);
+    if builder.add(&gitignore_path).is_some() {
+        return false; // .gitignore not found or parse error → not ignored
+    }
+    match builder.build() {
+        Ok(gi) => gi.matched_path_or_any_parents(path, is_dir).is_ignore(),
+        Err(_) => false,
+    }
+}
+
 /// Check if a subpath (relative to a repo root) is a persistent config path.
 ///
 /// Used by both `is_config_path` (FR-WE-4) and the FR-WE-3 worktree redirect
@@ -350,8 +362,8 @@ fn is_private_system_path(path: &str) -> bool {
 /// Trailing slashes in `starts_with` prevent false positives (e.g. `.agentsfoo`).
 fn is_persistent_repo_config(subpath: &str) -> bool {
     // .agents/ and .claude/ are often gitignored local config. The FR-WE-3 redirect
-    // path uses `git check-ignore` to distinguish: ignored paths redirect to the main
-    // checkout, tracked paths are allowed in the worktree.
+    // path uses `is_path_gitignored()` (backed by the `ignore` crate) to distinguish:
+    // ignored paths redirect to the main checkout, tracked paths are allowed in worktrees.
     subpath.starts_with("/.agents/")
         || subpath == "/.agents"
         || subpath.starts_with("/.claude/")
@@ -835,23 +847,27 @@ mod tests {
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
-        // Gitignored config paths inside worktrees should redirect to main checkout.
-        // CLAUDE.md and AGENTS.md are committed files — they stay in the worktree.
+
+        // Create temp worktree dirs with .gitignore that ignores .agents/ and .claude/
+        let wt1 = format!("{}/redir-test/.worktrees/abc12345", ws_str);
+        let wt2 = format!("{}/redir-test2/.worktrees/xyz99999", ws_str);
+        std::fs::create_dir_all(&wt1).expect("create wt1");
+        std::fs::create_dir_all(&wt2).expect("create wt2");
+        std::fs::write(
+            format!("{}/.gitignore", wt1),
+            ".agents/\n.claude/\n",
+        )
+        .expect("write .gitignore wt1");
+        std::fs::write(
+            format!("{}/.gitignore", wt2),
+            ".agents/\n.claude/\n",
+        )
+        .expect("write .gitignore wt2");
+
         let paths = [
-            // .agents/ (gitignored, redirect)
-            format!(
-                "{}/acme-api/.worktrees/abc12345/.agents/learnings/test.md",
-                ws_str
-            ),
-            format!(
-                "{}/web-app/.worktrees/xyz99999/.agents/handoff/notes.md",
-                ws_str
-            ),
-            // .claude/ (gitignored, redirect)
-            format!(
-                "{}/acme-api/.worktrees/abc12345/.claude/hooks/test.rs",
-                ws_str
-            ),
+            format!("{}/.agents/learnings/test.md", wt1),
+            format!("{}/.agents/handoff/notes.md", wt2),
+            format!("{}/.claude/hooks/test.rs", wt1),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -868,7 +884,6 @@ mod tests {
                     p,
                     msg
                 );
-                // Ensure the redirect target does NOT contain /.worktrees/
                 let target = msg.split("Write to: ").nth(1).unwrap_or("");
                 assert!(
                     !target.contains("/.worktrees/"),
@@ -877,6 +892,10 @@ mod tests {
                 );
             }
         }
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(format!("{}/redir-test", ws_str));
+        let _ = std::fs::remove_dir_all(format!("{}/redir-test2", ws_str));
     }
 
     #[test]
@@ -902,36 +921,54 @@ mod tests {
     }
 
     #[test]
-    fn test_worktree_agents_redirect_when_no_git_repo() {
-        // When the worktree path isn't inside a real git repo, git check-ignore
-        // fails and we fall back to redirect (fail-closed).
+    fn test_worktree_agents_allowed_when_not_gitignored() {
+        // When .agents/ is NOT in .gitignore, it's tracked → allow in worktree.
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
 
-        // Fake worktree path (no real git repo behind it)
-        let wt_agents = format!(
-            "{}/nogit-repo/.worktrees/abc12345/.agents",
-            ws_str
-        );
-        std::fs::create_dir_all(&wt_agents).expect("create temp .agents dir");
+        // Worktree with .gitignore that does NOT ignore .agents/
+        let wt_root = format!("{}/tracked-repo/.worktrees/abc12345", ws_str);
+        std::fs::create_dir_all(&wt_root).expect("create wt dir");
+        std::fs::write(
+            format!("{}/.gitignore", wt_root),
+            "target/\n*.log\n",
+        )
+        .expect("write .gitignore");
 
-        let test_path = format!(
-            "{}/nogit-repo/.worktrees/abc12345/.agents/brainstorm/notes.md",
-            ws_str
-        );
+        let test_path = format!("{}/.agents/brainstorm/notes.md", wt_root);
         let result = check_path(&test_path, Some(&sess));
-        // git check-ignore fails (not a git repo) → fail-closed → redirect
         assert!(
-            matches!(result, PathDecision::Deny(_)),
-            "expected REDIRECT when git check-ignore fails (no git repo), got {:?}",
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW for .agents/ not in .gitignore, got {:?}",
             result
         );
 
-        // Cleanup
-        let repo_root = format!("{}/nogit-repo", ws_str);
-        let _ = std::fs::remove_dir_all(&repo_root);
+        let _ = std::fs::remove_dir_all(format!("{}/tracked-repo", ws_str));
+    }
+
+    #[test]
+    fn test_worktree_agents_allowed_when_no_gitignore() {
+        // When no .gitignore exists at all, nothing is ignored → allow.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        let wt_root = format!("{}/nogi-repo/.worktrees/abc12345", ws_str);
+        std::fs::create_dir_all(&wt_root).expect("create wt dir");
+        // No .gitignore file at all
+
+        let test_path = format!("{}/.agents/brainstorm/notes.md", wt_root);
+        let result = check_path(&test_path, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW when no .gitignore exists, got {:?}",
+            result
+        );
+
+        let _ = std::fs::remove_dir_all(format!("{}/nogi-repo", ws_str));
     }
 
     #[test]
