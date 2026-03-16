@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 158 tests (130 unit + 18 integration + 10 proptest). Do not regress.
+Current: 194 tests (166 unit + 5 doc + 13 integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
