@@ -56,7 +56,7 @@ deploy: release
 
 # Lint Rust
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets -- -D warnings
 
 # Lint shell scripts (shellcheck + shfmt)
 lint-sh:

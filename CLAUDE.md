@@ -31,6 +31,11 @@ src/
 ## Commands
 
 ```bash
+mise run ci           # Run all CI gates locally (preferred)
+mise run lint         # All lints (Rust + shell + workflows)
+mise run test:all     # All tests (unit + integration + claude_md)
+mise run workflow-lint # actionlint + zizmor pedantic
+
 make build            # Dev build (fast)
 make test             # Run all unit tests
 make release          # Optimized + stripped release build
@@ -129,6 +134,31 @@ Test patterns:
 - Sandbox tests construct paths from `config::workspace()` for portability
 - Property tests use proptest strategies (256 cases each by default)
 - Fuzz targets require nightly: `cargo +nightly fuzz run <target>`
+
+## Releases
+
+Automated via [release-please](https://github.com/googleapis/release-please):
+
+1. Push conventional commits to `main`
+2. Release-please opens a "Release PR" bumping `Cargo.toml` version + `CHANGELOG.md`
+3. Merge the PR → creates git tag + GitHub Release
+4. Release workflow builds macOS binaries (arm64 + x86_64), cosign-signs, uploads
+
+Binaries: `muzzle-aarch64-apple-darwin.tar.gz`, `muzzle-x86_64-apple-darwin.tar.gz`
+Verification: each tarball has a `.sigstore.json` bundle + `SHA256SUMS.txt`
+
+```bash
+# Verify a downloaded binary
+cosign verify-blob muzzle-aarch64-apple-darwin.tar.gz \
+  --bundle muzzle-aarch64-apple-darwin.tar.gz.sigstore.json \
+  --certificate-identity="https://github.com/frits-v/muzzle/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+```
+
+## Supply Chain Policy
+
+All GitHub Actions are **SHA-pinned** with version comments. No rolling tags (`@v4`).
+Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
 
 ## Dependencies
 

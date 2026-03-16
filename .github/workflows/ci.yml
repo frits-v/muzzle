@@ -6,20 +6,44 @@ on:
   pull_request:
     branches: [main]
 
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   RUSTFLAGS: -Dwarnings
 
 jobs:
   check:
     name: Check & Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
         with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-check-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-check-${{ runner.os }}-
       - run: cargo fmt -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo check
@@ -27,21 +51,40 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
       - name: License exists
         run: test -f LICENSE
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Shell lint (shellcheck + shfmt)
         run: |
-          sudo apt-get install -y shellcheck
-          curl -sS https://webi.sh/shfmt | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          shellcheck scripts/*.sh
-          shfmt -d -i 2 -ci -bn scripts/*.sh
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          mise exec -- shellcheck scripts/*.sh
+          mise exec -- shfmt -d -i 2 -ci -bn scripts/*.sh
 
   test:
     name: Test
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-test-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-test-${{ runner.os }}-
       - name: Unit tests
         run: cargo test
       - name: Integration tests
@@ -51,25 +94,66 @@ jobs:
 
   build:
     name: Release Build
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-build-${{ runner.os }}-
       - run: cargo build --release
       - name: Verify all 5 binaries
         run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           for bin in session-start permissions changelog session-end ensure-worktree; do
             test -f "target/release/$bin" || { echo "MISSING: $bin"; exit 1; }
           done
           echo "All 5 binaries present"
       - name: Check binary sizes
         run: |
+          set -euo pipefail
+          [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           for bin in session-start permissions changelog session-end ensure-worktree; do
             size=$(stat -f%z "target/release/$bin" 2>/dev/null || stat -c%s "target/release/$bin")
-            if [ "$size" -gt 5242880 ]; then
+            if (( size > 5242880 )); then
               echo "FAIL: $bin is ${size} bytes (> 5MB)"
               exit 1
             fi
             echo "OK: $bin (${size} bytes)"
           done
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+    steps:
+      - uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: actionlint
+        run: mise exec -- actionlint
+      - name: zizmor (pedantic)
+        run: mise exec -- zizmor --pedantic .github/workflows/

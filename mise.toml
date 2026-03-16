@@ -1,0 +1,103 @@
+[tools]
+shellcheck = "0.11.0"
+shfmt      = "3.13.0"
+actionlint = "1.7.11"
+zizmor     = "1.23.1"
+
+[settings]
+lockfile = true
+locked   = true
+
+# ─── Tasks ──────────────────────────────────────────────────────────
+# Every task mirrors a CI gate so local and remote run the exact same checks.
+
+[tasks.fmt]
+description = "Check Rust formatting"
+run = "cargo fmt -- --check"
+
+[tasks."fmt:fix"]
+description = "Auto-fix Rust formatting"
+run = "cargo fmt"
+
+[tasks.clippy]
+description = "Clippy with -D warnings"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.check]
+description = "Type check without building"
+run = "cargo check"
+
+[tasks.rustdoc]
+description = "Rustdoc with -D warnings"
+run = "RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps"
+
+[tasks.test]
+description = "Run all unit tests"
+run = "cargo test"
+
+[tasks."test:integration"]
+description = "Run integration tests"
+run = "cargo test --test integration"
+
+[tasks."test:claude-md"]
+description = "Validate CLAUDE.md matches codebase"
+run = "cargo test --test claude_md"
+
+[tasks."test:all"]
+description = "Run all tests (unit + integration + claude_md)"
+depends = ["test", "test:integration", "test:claude-md"]
+
+[tasks.shellcheck]
+description = "Lint shell scripts with shellcheck"
+run = "shellcheck scripts/*.sh"
+
+[tasks.shfmt]
+description = "Check shell script formatting"
+run = "shfmt -d -i 2 -ci -bn scripts/*.sh"
+
+[tasks."shfmt:fix"]
+description = "Auto-fix shell script formatting"
+run = "shfmt -w -i 2 -ci -bn scripts/*.sh"
+
+[tasks.lint-sh]
+description = "Shell lint (shellcheck + shfmt)"
+depends = ["shellcheck", "shfmt"]
+
+[tasks.actionlint]
+description = "Lint GitHub Actions workflows"
+run = "actionlint"
+
+[tasks.zizmor]
+description = "Security lint GitHub Actions (pedantic)"
+run = "zizmor --pedantic .github/workflows/"
+
+[tasks.workflow-lint]
+description = "Full workflow lint (actionlint + zizmor)"
+depends = ["actionlint", "zizmor"]
+
+[tasks.lint]
+description = "All lints (Rust + shell + workflows)"
+depends = ["fmt", "clippy", "rustdoc", "lint-sh", "workflow-lint"]
+
+[tasks.build]
+description = "Dev build"
+run = "cargo build"
+
+[tasks.release]
+description = "Optimized release build"
+run = "cargo build --release"
+
+[tasks.sizes]
+description = "Show release binary sizes"
+run = """
+set -euo pipefail
+cargo build --release
+for bin in session-start permissions changelog session-end ensure-worktree; do
+  size=$(stat -f%z "target/release/$bin" 2>/dev/null || stat -c%s "target/release/$bin")
+  printf "  %-18s %s bytes\\n" "$bin" "$size"
+done
+"""
+
+[tasks.ci]
+description = "Run all CI gates locally"
+depends = ["fmt", "clippy", "check", "rustdoc", "test:all", "lint-sh", "workflow-lint"]
