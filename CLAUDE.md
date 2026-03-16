@@ -47,6 +47,27 @@ make sizes            # Show release binary sizes
 make test-one NAME=x  # Run single test by name
 ```
 
+## Quality Gate
+
+Before committing any changes, run the full CI gate locally and ensure it passes:
+
+```bash
+mise run ci
+```
+
+This runs lint + test + typecheck + docs-check. All checks must be green before committing.
+
+After pushing, poll PR checks and review comments in a single loop for up to 10 minutes:
+
+- Wait for all CI checks to pass (`gh pr checks --watch --fail-fast`)
+- Check for reviewer comments (`gh api repos/{owner}/{repo}/pulls/{number}/comments`)
+- If CI fails: investigate the root cause, fix, push, and restart the loop
+- For each review comment:
+  - Actionable feedback (code change requested): implement the fix, push, and reply confirming what changed
+  - Good suggestion already addressed or agreement: react with thumbs-up
+  - Incorrect or inapplicable suggestion: react with thumbs-down and reply with a brief explanation why
+- Done when CI is green AND no unresolved review comments remain
+
 ## Key Design Decisions
 
 - **Three-layer sandbox**: Session resolution -> context-aware path checking -> git safety regex
