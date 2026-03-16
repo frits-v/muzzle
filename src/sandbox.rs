@@ -117,8 +117,7 @@ pub fn check_path_with_context(
                         if let Some(id_slash) = after_wt[WORKTREES_SEG.len()..].find('/') {
                             let after_id = &after_wt[WORKTREES_SEG.len() + id_slash..]; // "/..." after ID
                             if is_persistent_repo_config(after_id) {
-                                let wt_root = &resolved
-                                    [..wt_idx + WORKTREES_SEG.len() + id_slash];
+                                let wt_root = &resolved[..wt_idx + WORKTREES_SEG.len() + id_slash];
                                 // Check the actual file path against .gitignore.
                                 // is_dir=false because we're checking a file write.
                                 if is_path_gitignored(wt_root, &resolved, false) {
@@ -853,16 +852,10 @@ mod tests {
         let wt2 = format!("{}/redir-test2/.worktrees/xyz99999", ws_str);
         std::fs::create_dir_all(&wt1).expect("create wt1");
         std::fs::create_dir_all(&wt2).expect("create wt2");
-        std::fs::write(
-            format!("{}/.gitignore", wt1),
-            ".agents/\n.claude/\n",
-        )
-        .expect("write .gitignore wt1");
-        std::fs::write(
-            format!("{}/.gitignore", wt2),
-            ".agents/\n.claude/\n",
-        )
-        .expect("write .gitignore wt2");
+        std::fs::write(format!("{}/.gitignore", wt1), ".agents/\n.claude/\n")
+            .expect("write .gitignore wt1");
+        std::fs::write(format!("{}/.gitignore", wt2), ".agents/\n.claude/\n")
+            .expect("write .gitignore wt2");
 
         let paths = [
             format!("{}/.agents/learnings/test.md", wt1),
@@ -931,11 +924,8 @@ mod tests {
         // Worktree with .gitignore that does NOT ignore .agents/
         let wt_root = format!("{}/tracked-repo/.worktrees/abc12345", ws_str);
         std::fs::create_dir_all(&wt_root).expect("create wt dir");
-        std::fs::write(
-            format!("{}/.gitignore", wt_root),
-            "target/\n*.log\n",
-        )
-        .expect("write .gitignore");
+        std::fs::write(format!("{}/.gitignore", wt_root), "target/\n*.log\n")
+            .expect("write .gitignore");
 
         let test_path = format!("{}/.agents/brainstorm/notes.md", wt_root);
         let result = check_path(&test_path, Some(&sess));
