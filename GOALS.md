@@ -190,11 +190,11 @@ Dependency-Update-Tool, Token-Permissions, Binary-Artifacts, Pinned-Dependencies
 License, Vulnerabilities, Fuzzing). Target: 8.0+/10.
 
 Actionable improvements (ordered by effort):
-- [ ] Add `SECURITY.md` with vulnerability reporting policy (Security-Policy: 0→10)
-- [ ] Enable branch protection: require status checks, require PR review (Branch-Protection: 3→8+)
+- [x] Add `SECURITY.md` with vulnerability reporting policy (Security-Policy: 0→10)
+- [x] Enable branch protection: require status checks, dismiss stale reviews (Branch-Protection: 3→8+)
+- [x] Add CodeQL analysis workflow for SAST (`.github/workflows/codeql.yml`)
 - [ ] Ensure all PRs go through CI before merge (CI-Tests: 6→10)
 - [ ] Trigger first signed release via release-please (Signed-Releases: -1→10)
-- [ ] Add GitHub code scanning / SAST workflow (SAST: not yet scored)
 
 Not actionable (time/structural):
 - Maintained (0/10) — repo < 90 days old, self-resolves
