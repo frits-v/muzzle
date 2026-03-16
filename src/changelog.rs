@@ -772,4 +772,99 @@ mod tests {
         let (y, m, d) = days_to_date(0);
         assert_eq!((y, m, d), (1970, 1, 1));
     }
+
+    #[test]
+    fn test_input_fields_from_value() {
+        let v = serde_json::json!({
+            "command": "ls -la",
+            "file_path": "/tmp/test.rs",
+            "repo": "owner/repo",
+            "title": "PR Title",
+            "branch": "feature/test",
+            "projectKey": "CN",
+            "summary": "Issue summary"
+        });
+        let fields = InputFields::from_value(&v);
+        assert_eq!(fields.command, "ls -la");
+        assert_eq!(fields.file_path, "/tmp/test.rs");
+        assert_eq!(fields.repo, "owner/repo");
+        assert_eq!(fields.title, "PR Title");
+        assert_eq!(fields.branch, "feature/test");
+        assert_eq!(fields.project_key, "CN");
+        assert_eq!(fields.summary, "Issue summary");
+    }
+
+    #[test]
+    fn test_input_fields_from_empty_value() {
+        let v = serde_json::json!({});
+        let fields = InputFields::from_value(&v);
+        assert_eq!(fields.command, "");
+        assert_eq!(fields.file_path, "");
+        assert_eq!(fields.repo, "");
+    }
+
+    #[test]
+    fn test_output_fields_from_value() {
+        let v = serde_json::json!({
+            "stdout": "output text",
+            "stderr": "error text"
+        });
+        let fields = OutputFields::from_value(&v);
+        assert_eq!(fields.stdout, "output text");
+        assert_eq!(fields.stderr, "error text");
+
+        // Empty payload
+        let empty = OutputFields::from_value(&serde_json::json!({}));
+        assert_eq!(empty.stdout, "");
+        assert_eq!(empty.stderr, "");
+    }
+
+    #[test]
+    fn test_extract_first_word() {
+        assert_eq!(extract_first_word("ls -la"), "ls");
+        assert_eq!(extract_first_word("  git status  "), "git");
+        assert_eq!(extract_first_word("single"), "single");
+        assert_eq!(extract_first_word("tab\there"), "tab");
+        assert_eq!(extract_first_word(""), "");
+    }
+
+    #[test]
+    fn test_extract_git_dir() {
+        assert_eq!(extract_git_dir("git -C /path/to/repo status"), "/path/to/repo");
+        assert_eq!(extract_git_dir("git status"), "");
+        assert_eq!(extract_git_dir("ls -la"), "");
+    }
+
+    #[test]
+    fn test_extract_push_arg() {
+        // First non-flag arg after 'push' = remote
+        assert_eq!(extract_push_arg("git push origin main", 1), "origin");
+        // Second non-flag arg after 'push' = branch
+        assert_eq!(extract_push_arg("git push origin main", 2), "main");
+        // Flags are skipped
+        assert_eq!(extract_push_arg("git push --force-with-lease origin feat", 1), "origin");
+        // No push keyword
+        assert_eq!(extract_push_arg("git commit -m msg", 1), "");
+        // Not enough args
+        assert_eq!(extract_push_arg("git push origin", 2), "");
+    }
+
+    #[test]
+    fn test_append_to_changelog() {
+        let tmp = std::env::temp_dir().join("muzzle-test-changelog-append");
+        let _ = std::fs::create_dir_all(&tmp);
+        let path = tmp.join("test-changelog.md");
+        let _ = std::fs::remove_file(&path);
+
+        // Append to new file
+        append_to_changelog(&path, "entry 1").expect("first append failed");
+        append_to_changelog(&path, "entry 2").expect("second append failed");
+
+        let content = std::fs::read_to_string(&path).expect("read failed");
+        assert!(content.contains("entry 1"));
+        assert!(content.contains("entry 2"));
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&tmp);
+    }
 }
