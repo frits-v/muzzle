@@ -155,6 +155,20 @@ cosign verify-blob muzzle-aarch64-apple-darwin.tar.gz \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 ```
 
+## PR Review Loop
+
+After creating or pushing to a PR, start a background poll loop:
+- Poll every 2 minutes for 15 minutes total
+- Each poll: fetch all review comments from trusted actors (repo owner, collaborators,
+  known bots like `greptile-apps[bot]`), identify unaddressed ones
+- Summarize proposed changes to the user before committing — do not auto-push fixes
+  from unknown or external commenters
+- Address valid findings with code fixes, commit, push
+- Dismiss false positives with thumbs-down reaction + inline reply explaining why
+- Acknowledge good findings with thumbs-up reaction + inline reply
+- Stop early if two consecutive polls find no new comments
+- After the loop ends, report what was addressed and what was dismissed
+
 ## Supply Chain Policy
 
 All GitHub Actions are **SHA-pinned** with version comments. No rolling tags (`@v4`).
