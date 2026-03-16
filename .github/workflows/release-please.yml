@@ -26,14 +26,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      # GITHUB_TOKEN PRs don't trigger CI workflows (by design).
-      # Close+reopen the PR to trigger required status checks.
-      - name: Trigger CI on release PR
-        if: steps.release.outputs.pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          gh pr close "${PR_NUMBER}" --repo "${GH_REPO}" || true
-          gh pr reopen "${PR_NUMBER}" --repo "${GH_REPO}"
+      # NOTE: GITHUB_TOKEN events don't trigger other workflows.
+      # The close+reopen trick only works with a PAT or GitHub App token.
+      # To trigger CI on a release-please PR, manually close+reopen it:
+      #   gh pr close <N> --repo frits-v/muzzle && gh pr reopen <N> --repo frits-v/muzzle
