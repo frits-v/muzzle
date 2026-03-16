@@ -781,7 +781,7 @@ mod tests {
             "repo": "owner/repo",
             "title": "PR Title",
             "branch": "feature/test",
-            "projectKey": "CN",
+            "projectKey": "PROJ",
             "summary": "Issue summary"
         });
         let fields = InputFields::from_value(&v);
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(fields.repo, "owner/repo");
         assert_eq!(fields.title, "PR Title");
         assert_eq!(fields.branch, "feature/test");
-        assert_eq!(fields.project_key, "CN");
+        assert_eq!(fields.project_key, "PROJ");
         assert_eq!(fields.summary, "Issue summary");
     }
 
