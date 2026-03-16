@@ -223,11 +223,9 @@ pub fn is_under(path: &Path, dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    /// Mutex for tests that mutate MUZZLE_WORKSPACE env var.
-    /// Prevents races with tests that call workspace() and expect the default.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Use the crate-level ENV_LOCK shared across all modules
+    use crate::ENV_LOCK;
 
     #[test]
     fn test_short_id() {
@@ -311,5 +309,90 @@ mod tests {
         let msg = result.unwrap_err();
         assert!(msg.contains("does not exist"), "error: {}", msg);
         assert!(msg.contains("MUZZLE_WORKSPACE"), "error: {}", msg);
+    }
+
+    #[test]
+    fn test_config_file_path() {
+        let path = config_file();
+        assert!(path.ends_with(".config/muzzle/config"));
+    }
+
+    #[test]
+    fn test_pid_marker_dir_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = pid_marker_dir_path();
+        assert!(path.ends_with(".claude-tmp/by-pid"));
+    }
+
+    #[test]
+    fn test_changelog_gz_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = changelog_gz_path("sess-1");
+        let expected = workspace().join(".claude-changelog-sess-1.md.gz");
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn test_trace_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = trace_path("sess-2");
+        let expected = workspace().join(".claude-trace-sess-2.md");
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn test_trace_gz_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = trace_gz_path("sess-2");
+        let expected = workspace().join(".claude-trace-sess-2.md.gz");
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn test_changelog_symlink_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = changelog_symlink();
+        assert!(path.ends_with(".claude-changelog.md"));
+    }
+
+    #[test]
+    fn test_rate_limit_dir() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = rate_limit_dir("sess-3");
+        assert!(path.ends_with("sess-3/rate-limits"));
+    }
+
+    #[test]
+    fn test_worktree_dir() {
+        let repo = Path::new("/tmp/my-repo");
+        assert_eq!(worktree_dir(repo), PathBuf::from("/tmp/my-repo/.worktrees"));
+    }
+
+    #[test]
+    fn test_worktree_path() {
+        let repo = Path::new("/tmp/my-repo");
+        assert_eq!(
+            worktree_path(repo, "abc12345"),
+            PathBuf::from("/tmp/my-repo/.worktrees/abc12345")
+        );
+    }
+
+    #[test]
+    fn test_workspace_env_override() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("MUZZLE_WORKSPACE", "/tmp/test-ws");
+        let ws = workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert_eq!(ws, PathBuf::from("/tmp/test-ws"));
+    }
+
+    #[test]
+    fn test_workspace_empty_env_falls_back() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("MUZZLE_WORKSPACE", "");
+        let ws = workspace();
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        // Should fall through to config or default, not be empty
+        assert!(!ws.as_os_str().is_empty());
     }
 }

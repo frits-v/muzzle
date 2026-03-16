@@ -333,6 +333,7 @@ fn spec_file_has_content(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ENV_LOCK;
     use std::sync::Mutex;
 
     // Serialize session tests to avoid PPID marker conflicts.
@@ -340,7 +341,8 @@ mod tests {
 
     #[test]
     fn test_resolve_with_id() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         let sess = resolve_with_id("abc12345-6789-0000-1111-222233334444");
@@ -358,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_resolve_ppid_walk_success() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Create a PID marker for our own PPID
@@ -391,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_resolve_ppid_miss() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Remove our direct PPID marker if any
@@ -427,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_resolve_no_marker_dir() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Remove our direct PPID marker
@@ -571,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_resolve_readonly_no_marker_write() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Create a marker NOT at our immediate PPID but at a "grandparent" PID.
@@ -621,7 +623,8 @@ mod tests {
 
     #[test]
     fn test_resolve_readwrite_creates_marker() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         // Same setup as above but use the read-write variant
@@ -670,8 +673,118 @@ mod tests {
     }
 
     #[test]
+    fn test_state_has_session() {
+        let empty = State::empty();
+        assert!(!empty.has_session(), "empty state should not have session");
+
+        let populated = State::from_id("test-has-session");
+        assert!(
+            populated.has_session(),
+            "populated state should have session"
+        );
+    }
+
+    #[test]
+    fn test_read_spec_file_empty() {
+        let tmp = std::env::temp_dir().join("muzzle-test-spec-empty");
+        let _ = fs::create_dir_all(&tmp);
+        let spec_path = tmp.join("empty.env");
+        fs::write(&spec_path, "").expect("write failed");
+
+        let entries = read_spec_file(&spec_path).expect("read failed");
+        assert!(entries.is_empty(), "empty file should yield zero entries");
+
+        let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn test_read_spec_file_whitespace_only() {
+        let tmp = std::env::temp_dir().join("muzzle-test-spec-ws");
+        let _ = fs::create_dir_all(&tmp);
+        let spec_path = tmp.join("whitespace.env");
+        fs::write(&spec_path, "  \n\n  \n").expect("write failed");
+
+        let entries = read_spec_file(&spec_path).expect("read failed");
+        assert!(
+            entries.is_empty(),
+            "whitespace-only file should yield zero entries"
+        );
+
+        let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn test_read_spec_file_malformed_lines() {
+        let tmp = std::env::temp_dir().join("muzzle-test-spec-mal");
+        let _ = fs::create_dir_all(&tmp);
+        let spec_path = tmp.join("malformed.env");
+
+        // Mix of valid (4 pipe-parts) and invalid lines
+        let content = "valid-repo|branch|/wt/path|/repo/path\n\
+                        only-two|parts\n\
+                        three|pipe|parts\n\
+                        also-valid|b2|/wt2|/repo2\n";
+        fs::write(&spec_path, content).expect("write failed");
+
+        let entries = read_spec_file(&spec_path).expect("read failed");
+        assert_eq!(entries.len(), 2, "should skip malformed lines");
+        assert_eq!(entries[0].repo, "valid-repo");
+        assert_eq!(entries[1].repo, "also-valid");
+
+        let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn test_read_spec_file_not_found() {
+        let result = read_spec_file(Path::new("/tmp/muzzle-nonexistent-spec-file.env"));
+        assert!(result.is_err(), "reading nonexistent file should error");
+    }
+
+    #[test]
+    fn test_spec_file_has_content_empty() {
+        let tmp = std::env::temp_dir().join("muzzle-test-has-content");
+        let _ = fs::create_dir_all(&tmp);
+
+        // Empty file
+        let empty_path = tmp.join("empty.env");
+        fs::write(&empty_path, "").expect("write failed");
+        assert!(!spec_file_has_content(&empty_path), "empty file → false");
+
+        // Non-empty file
+        let nonempty_path = tmp.join("nonempty.env");
+        fs::write(&nonempty_path, "data").expect("write failed");
+        assert!(
+            spec_file_has_content(&nonempty_path),
+            "non-empty file → true"
+        );
+
+        // Missing file
+        assert!(
+            !spec_file_has_content(Path::new("/tmp/muzzle-no-such-file")),
+            "missing file → false"
+        );
+
+        let _ = fs::remove_file(&empty_path);
+        let _ = fs::remove_file(&nonempty_path);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn test_session_error_display() {
+        let io_err = SessionError::Io(io::Error::new(io::ErrorKind::NotFound, "gone"));
+        assert!(format!("{}", io_err).contains("I/O error"));
+
+        let parse_err = SessionError::Parse("bad data".into());
+        assert!(format!("{}", parse_err).contains("parse error"));
+        assert!(format!("{}", parse_err).contains("bad data"));
+    }
+
+    #[test]
     fn test_register_pid() {
-        let _lock = SESSION_LOCK.lock().unwrap();
+        let _lock = SESSION_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         reset_cache();
 
         let dir = config::pid_marker_dir_path();

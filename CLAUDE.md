@@ -125,7 +125,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-158 tests (130 unit + 18 integration + 10 proptest) plus 4 fuzz targets.
+194 tests (166 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:

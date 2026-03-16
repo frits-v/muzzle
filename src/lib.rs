@@ -27,3 +27,31 @@ pub fn worktree_missing_msg(repo: &str) -> String {
          — Run: .claude/hooks/bin/ensure-worktree {repo}"
     )
 }
+
+/// Shared test mutex for all tests that mutate `MUZZLE_WORKSPACE` env var.
+/// Since `env::set_var` is process-wide and `cargo test` runs in parallel,
+/// every test that writes to this env var must hold this lock to prevent
+/// races with tests in other modules that call `config::workspace()`.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_worktree_missing_msg_format() {
+        let msg = worktree_missing_msg("my-repo");
+        assert!(msg.starts_with("WORKTREE_MISSING:my-repo"));
+        assert!(msg.contains("ensure-worktree my-repo"));
+    }
+
+    #[test]
+    fn test_worktree_missing_msg_special_chars() {
+        let msg = worktree_missing_msg("repo-with-dashes");
+        assert!(msg.starts_with("WORKTREE_MISSING:repo-with-dashes"));
+
+        let msg = worktree_missing_msg(".dotfile-repo");
+        assert!(msg.starts_with("WORKTREE_MISSING:.dotfile-repo"));
+    }
+}

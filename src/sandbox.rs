@@ -428,6 +428,7 @@ fn extract_rel_path(path: &str, repo: &str, ws: &str) -> String {
 mod tests {
     use super::*;
     use crate::config;
+    use crate::ENV_LOCK;
     use std::path::PathBuf;
 
     fn sess_with_worktrees() -> State {
@@ -544,6 +545,7 @@ mod tests {
 
     #[test]
     fn test_worktree_path_allow() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -564,6 +566,7 @@ mod tests {
 
     #[test]
     fn test_main_checkout_deny() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -584,6 +587,7 @@ mod tests {
 
     #[test]
     fn test_no_worktree_session_deny() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let p = format!("{}/web-app/app/main.py", ws.display());
@@ -597,6 +601,7 @@ mod tests {
 
     #[test]
     fn test_no_worktree_session_allows_existing_worktree_paths() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -618,6 +623,7 @@ mod tests {
 
     #[test]
     fn test_config_paths_always_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -640,6 +646,7 @@ mod tests {
 
     #[test]
     fn test_session_temp_always_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let p = format!("{}/.claude-tmp/abc12345-test/output.txt", ws.display());
@@ -724,6 +731,7 @@ mod tests {
 
     #[test]
     fn test_no_worktree_session_config_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -746,6 +754,7 @@ mod tests {
 
     #[test]
     fn test_repo_agents_allowed_in_worktree_mode() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -768,6 +777,7 @@ mod tests {
 
     #[test]
     fn test_repo_claude_md_allowed_in_worktree_mode() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -790,6 +800,7 @@ mod tests {
 
     #[test]
     fn test_worktree_config_paths_redirected() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -842,6 +853,7 @@ mod tests {
 
     #[test]
     fn test_worktree_non_agents_still_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -863,6 +875,7 @@ mod tests {
 
     #[test]
     fn test_changelog_files_allowed_no_worktree() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -1106,6 +1119,7 @@ mod tests {
 
     #[test]
     fn test_worktree_path_with_spaces_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
@@ -1188,6 +1202,7 @@ mod tests {
 
     #[test]
     fn test_worktree_missing_for_unknown_repo() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
