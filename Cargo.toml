@@ -1,6 +1,6 @@
 [package]
 name = "muzzle"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Session isolation and workspace sandboxing for AI coding agents"
 license = "MIT"
