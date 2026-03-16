@@ -267,6 +267,7 @@ fn route_sysdig(action: &str) -> McpDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ENV_LOCK;
 
     // FR-MR-1: GitHub
     #[test]
@@ -488,6 +489,7 @@ mod tests {
     // Rate limiting tests
     #[test]
     fn test_atlassian_create_jira_with_session() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Clean up stale rate files from previous test runs
         let rate_dir = config::rate_limit_dir("test-rate-limit-session-1");
         let _ = std::fs::remove_dir_all(&rate_dir);
@@ -516,6 +518,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_exceeded() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Use a unique session ID so tests don't interfere
         let session_id = "test-rate-limit-exceed";
         let rate_dir = config::rate_limit_dir(session_id);
@@ -542,6 +545,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_not_exceeded() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let session_id = "test-rate-limit-ok";
         let rate_dir = config::rate_limit_dir(session_id);
         let _ = fs::create_dir_all(&rate_dir);
@@ -564,6 +568,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_expired_entries() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let session_id = "test-rate-limit-expired";
         let rate_dir = config::rate_limit_dir(session_id);
         let _ = fs::create_dir_all(&rate_dir);
@@ -591,6 +596,7 @@ mod tests {
 
     #[test]
     fn test_route_with_session_rate_limit_message() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Exhaust the rate limit, then verify the route function returns the rate limit message
         let session_id = "test-route-ratelimit-msg";
         let rate_dir = config::rate_limit_dir(session_id);
