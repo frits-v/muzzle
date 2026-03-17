@@ -1,11 +1,36 @@
 # muzzle configuration
+# Place at: ~/.config/muzzle/config
 #
-# Copy to ~/.config/muzzle/config and edit for your machine.
-# Alternatively, set the MUZZLE_WORKSPACE environment variable.
-#
-# Resolution order:
-#   1. MUZZLE_WORKSPACE env var
-#   2. workspace key in ~/.config/muzzle/config (this file)
-#   3. $HOME/src (default)
+# All keys are optional. Resolution order for each:
+#   1. Environment variable (highest priority)
+#   2. This config file
+#   3. Built-in default
 
-workspace = /path/to/your/workspace
+# ── Workspaces ───────────────────────────────────────────────────────
+#
+# Repo root directories where sandbox/worktree enforcement applies.
+# Comma-separated list of absolute paths.
+#
+# Env: MUZZLE_WORKSPACES (comma-separated)
+# Legacy: MUZZLE_WORKSPACE or `workspace` key (single path, still works)
+# Default: $HOME/src
+#
+# workspaces = /Users/you/src/org-a, /Users/you/src/my-project
+
+# ── State Directory ──────────────────────────────────────────────────
+#
+# Where muzzle stores session artifacts: PID markers, changelogs,
+# worktree specs, traces, and per-session temp files.
+#
+# Env: MUZZLE_STATE_DIR
+# Fallback: $XDG_STATE_HOME/muzzle
+# Default: ~/.local/state/muzzle
+#
+# Structure:
+#   by-pid/        PID markers for session resolution
+#   changelogs/    Per-session changelog files
+#   specs/         Worktree spec files
+#   traces/        Decision trace logs
+#   tmp/           Per-session temp directories
+#
+# state_dir = /Users/you/.local/state/muzzle

@@ -8,7 +8,7 @@ that enforce workspace sandboxing, git safety, and worktree-based session isolat
 ```
 src/
   lib.rs              # Library root (re-exports all modules)
-  config.rs           # Constants, path helpers (MUZZLE_WORKSPACE or $HOME/src)
+  config.rs           # Constants, path helpers (workspaces + XDG state_dir)
   session.rs          # Session ID resolution via PPID walk + spec file I/O
   sandbox.rs          # Path sandboxing (7 rules + worktree enforcement)
   gitcheck.rs         # 8 git safety regex patterns + worktree enforcement
@@ -155,7 +155,8 @@ Run with `make test` or `cargo test`.
 Test patterns:
 - Session tests use `SESSION_LOCK` mutex to avoid PPID marker conflicts
 - MCP rate limit tests use unique session IDs to avoid cross-test interference
-- Sandbox tests construct paths from `config::workspace()` for portability
+- Sandbox tests construct paths from `config::workspace()` (first workspace) for portability
+- State paths use `config::state_dir()` (XDG `~/.local/state/muzzle`)
 - Property tests use proptest strategies (256 cases each by default)
 - Fuzz targets require nightly: `cargo +nightly fuzz run <target>`
 - Use fictional repo names in tests (e.g. `acme-api`, `web-app`), never real company or project names

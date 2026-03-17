@@ -95,18 +95,27 @@ fn read_config_key(key: &str) -> Option<String> {
 
 /// All configured workspace roots (repo directories under sandbox enforcement).
 ///
-/// Resolution order:
+/// Resolution order (env vars always override config):
 /// 1. `MUZZLE_WORKSPACES` env var (comma-separated)
-/// 2. `workspaces` key in config (comma-separated)
-/// 3. Legacy `MUZZLE_WORKSPACE` env var (single path)
+/// 2. Legacy `MUZZLE_WORKSPACE` env var (single path)
+/// 3. `workspaces` key in config (comma-separated)
 /// 4. Legacy `workspace` key in config (single path)
 /// 5. `$HOME/src` default
 pub fn workspaces() -> Vec<PathBuf> {
-    // New multi-workspace env
+    // Env vars always override config file (regardless of legacy/new).
+
+    // New multi-workspace env (highest priority)
     if let Ok(val) = std::env::var("MUZZLE_WORKSPACES") {
         let paths = parse_path_list(&val);
         if !paths.is_empty() {
             return paths;
+        }
+    }
+
+    // Legacy single workspace env (still overrides config)
+    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
+        if !ws.is_empty() {
+            return vec![PathBuf::from(ws)];
         }
     }
 
@@ -115,13 +124,6 @@ pub fn workspaces() -> Vec<PathBuf> {
         let paths = parse_path_list(&val);
         if !paths.is_empty() {
             return paths;
-        }
-    }
-
-    // Legacy single workspace env
-    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
-        if !ws.is_empty() {
-            return vec![PathBuf::from(ws)];
         }
     }
 
