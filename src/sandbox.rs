@@ -118,10 +118,10 @@ pub fn check_path_with_context(
                             let after_id = &after_wt[WORKTREES_SEG.len() + id_slash..]; // "/..." after ID
                             if is_persistent_repo_config(after_id) {
                                 let wt_root = &resolved[..wt_idx + WORKTREES_SEG.len() + id_slash];
+                                let repo_prefix = &resolved[..wt_idx];
                                 // Check the actual file path against .gitignore.
                                 // is_dir=false because we're checking a file write.
-                                if is_path_gitignored(wt_root, &resolved, false) {
-                                    let repo_prefix = &resolved[..wt_idx];
+                                if is_path_gitignored(wt_root, repo_prefix, &resolved, false) {
                                     return PathDecision::Deny(format!(
                                         "REDIRECT: config path must persist across sessions. \
                                          Write to: {}{}",
@@ -330,35 +330,40 @@ fn is_private_system_path(path: &str) -> bool {
     path.starts_with("/private/etc/") || path.starts_with("/private/var/")
 }
 
-/// Check if a file path is gitignored at a given root.
+/// Check if a file path is gitignored.
 ///
 /// Uses the `ignore` crate (from ripgrep) to parse gitignore files with
 /// full gitignore semantics: globs, negation, directory-only patterns,
 /// anchoring, `**/` prefixes, etc.
 ///
 /// Checks three sources (matching git's own precedence):
-/// 1. `<root>/.gitignore` — repo-local patterns
-/// 2. `<root>/.git/info/exclude` — repo-local unshared patterns
+/// 1. `<root>/.gitignore` — worktree-local patterns
+/// 2. `<repo_root>/.git/info/exclude` — repo-level unshared patterns
 /// 3. Global gitignore via `core.excludesFile` (`build_global()`)
 ///
+/// `root` is the worktree root (used for `.gitignore` and path matching).
+/// `repo_root` is the main checkout root (used for `.git/info/exclude`,
+/// since in a git worktree `.git` is a file, not a directory).
+///
 /// Returns `true` if ignored, `false` if not ignored or no gitignore files exist.
-fn is_path_gitignored(root: &str, path: &str, is_dir: bool) -> bool {
+fn is_path_gitignored(root: &str, repo_root: &str, path: &str, is_dir: bool) -> bool {
     use ignore::gitignore::GitignoreBuilder;
 
     let mut builder = GitignoreBuilder::new(root);
 
-    // Add repo-local sources, skipping NotFound (file may not exist).
-    // Non-NotFound errors (permission denied, parse errors) → bail conservatively.
+    // Add sources, skipping path-not-found errors (file may not exist).
+    // In real worktrees .git is a file, so .git/info/exclude under the worktree
+    // root would yield ENOTDIR — we skip that too.
     for source in &[
         format!("{}/.gitignore", root),
-        format!("{}/.git/info/exclude", root),
+        format!("{}/.git/info/exclude", repo_root),
     ] {
         if let Some(err) = builder.add(source) {
-            if err
-                .io_error()
-                .is_some_and(|e| e.kind() != std::io::ErrorKind::NotFound)
-            {
-                return false;
+            if let Some(io_err) = err.io_error() {
+                match io_err.kind() {
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => {}
+                    _ => return false, // permission denied, etc. → bail conservatively
+                }
             }
         }
     }
