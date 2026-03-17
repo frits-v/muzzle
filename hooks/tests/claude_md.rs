@@ -12,10 +12,29 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Root of the hooks crate (set by Cargo during `cargo test`).
+fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Workspace root (parent of hooks/).
+fn workspace_root() -> PathBuf {
+    crate_root()
+        .parent()
+        .expect("hooks/ should be inside workspace root")
+        .to_path_buf()
+}
+
+fn read_crate_file(name: &str) -> String {
+    let path = crate_root().join(name);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} not found: {e}", path.display()))
+}
 
 fn read_file(name: &str) -> String {
-    fs::read_to_string(name).unwrap_or_else(|e| panic!("{name} not found: {e}"))
+    let path = workspace_root().join(name);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} not found: {e}", path.display()))
 }
 
 fn rs_files_in(dir: &Path, root: &Path) -> HashSet<String> {
@@ -60,7 +79,7 @@ fn backtick_words(text: &str) -> HashSet<String> {
 #[test]
 fn claude_md_binary_count_matches() {
     let claude = read_file("CLAUDE.md");
-    let cargo = read_file("Cargo.toml");
+    let cargo = read_crate_file("Cargo.toml");
 
     // Extract "producing N binaries" from CLAUDE.md
     let claimed: usize = claude
@@ -98,8 +117,8 @@ enum ArchState {
 #[test]
 fn claude_md_architecture_tree_complete() {
     let claude = read_file("CLAUDE.md");
-    let src = Path::new("src");
-    let actual_files = rs_files_in(src, src);
+    let src = crate_root().join("src");
+    let actual_files = rs_files_in(&src, &src);
 
     let mut state = ArchState::Searching;
     let mut arch_files = HashSet::new();
@@ -168,7 +187,7 @@ fn claude_md_architecture_tree_complete() {
 #[test]
 fn claude_md_dependency_count_matches() {
     let claude = read_file("CLAUDE.md");
-    let cargo = read_file("Cargo.toml");
+    let cargo = read_crate_file("Cargo.toml");
 
     // Extract "N crates" from CLAUDE.md
     let claimed: usize = claude
@@ -217,7 +236,7 @@ fn claude_md_dependency_count_matches() {
 #[test]
 fn claude_md_mentions_all_dependencies() {
     let claude = read_file("CLAUDE.md");
-    let cargo = read_file("Cargo.toml");
+    let cargo = read_crate_file("Cargo.toml");
 
     let backticks = backtick_words(&claude);
 

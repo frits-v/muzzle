@@ -42,7 +42,11 @@ fn test_workspace() -> String {
 
 /// Helper: run a binary with JSON on stdin, return (stdout, stderr, exit_code).
 fn run_binary(name: &str, json_input: &str) -> (String, String, i32) {
-    let binary = format!("target/debug/{}", name);
+    // In a workspace, binaries are in the workspace-root target/ directory.
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("hooks/ should be inside workspace root");
+    let binary = format!("{}/target/debug/{}", workspace_root.display(), name);
     let mut child = Command::new(&binary)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -141,7 +145,11 @@ fn test_permissions_invalid_json_exits_clean() {
 
 #[test]
 fn test_ensure_worktree_no_args() {
-    let output = Command::new("target/debug/ensure-worktree")
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("hooks/ should be inside workspace root");
+    let binary = format!("{}/target/debug/ensure-worktree", workspace_root.display());
+    let output = Command::new(&binary)
         .output()
         .expect("failed to run ensure-worktree");
 
@@ -158,7 +166,11 @@ fn test_ensure_worktree_no_args() {
 
 #[test]
 fn test_ensure_worktree_no_session() {
-    let output = Command::new("target/debug/ensure-worktree")
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("hooks/ should be inside workspace root");
+    let binary = format!("{}/target/debug/ensure-worktree", workspace_root.display());
+    let output = Command::new(&binary)
         .arg("nonexistent-repo")
         .output()
         .expect("failed to run ensure-worktree");

@@ -1,0 +1,41 @@
+[package]
+name = "muzzle-hooks"
+version = "0.2.0"
+edition = "2021"
+description = "Session isolation and workspace sandboxing for AI coding agents"
+license = "MIT"
+repository = "https://github.com/frits-v/muzzle"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = "1"
+flate2 = "1"
+libc = "0.2"
+
+[dev-dependencies]
+proptest = "1"
+
+[lib]
+name = "muzzle"
+path = "src/lib.rs"
+
+[[bin]]
+name = "session-start"
+path = "src/bin/session_start.rs"
+
+[[bin]]
+name = "permissions"
+path = "src/bin/permissions.rs"
+
+[[bin]]
+name = "changelog"
+path = "src/bin/changelog_bin.rs"
+
+[[bin]]
+name = "session-end"
+path = "src/bin/session_end.rs"
+
+[[bin]]
+name = "ensure-worktree"
+path = "src/bin/ensure_worktree.rs"

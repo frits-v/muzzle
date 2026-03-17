@@ -1,0 +1,304 @@
+use muzzle_memory::{capture, inject, store};
+use std::{env, fs, process};
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    let cmd = args.get(1).map(|s| s.as_str());
+    let result = match cmd {
+        Some("search") => cmd_search(&args[2..]),
+        Some("save") => cmd_save(&args[2..]),
+        Some("capture") => cmd_capture(&args[2..]),
+        Some("context") => cmd_context(&args[2..]),
+        Some("inject") => cmd_inject(&args[2..]),
+        Some("stats") => cmd_stats(),
+        _ => {
+            print_usage();
+            process::exit(1);
+        }
+    };
+
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        process::exit(1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn db_path() -> String {
+    let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{home}/.muzzle/memory.db")
+}
+
+fn open_store() -> Result<store::Store, String> {
+    let path = db_path();
+    // Ensure parent directory exists.
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create dir: {e}"))?;
+    }
+    store::Store::open(&path).map_err(|e| format!("open db: {e}"))
+}
+
+/// Derive project name from CWD: `parent_basename/basename`.
+fn project_from_cwd() -> String {
+    let cwd = env::current_dir().unwrap_or_default();
+    let base = cwd
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let parent = cwd
+        .parent()
+        .and_then(|p| p.file_name())
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    if parent.is_empty() {
+        base
+    } else {
+        format!("{parent}/{base}")
+    }
+}
+
+/// Simple flag lookup: find `flag` in `args` and return the next element.
+fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+}
+
+fn truncate(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        s
+    } else {
+        // Find a char boundary at or before max.
+        let mut end = max;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        &s[..end]
+    }
+}
+
+fn print_usage() {
+    eprintln!("Usage: memory <command> [args...]");
+    eprintln!();
+    eprintln!("Commands:");
+    eprintln!("  search  <query> [-p project]");
+    eprintln!(
+        "  save    <title> <content> [--type TYPE] [--topic KEY] [--source SRC] [-p project]"
+    );
+    eprintln!("  capture <changelog-path> <session-id> <project>");
+    eprintln!("  context [project]");
+    eprintln!("  inject  [project]");
+    eprintln!("  stats");
+}
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+fn cmd_search(args: &[String]) -> Result<(), String> {
+    let query = find_positional(args, 0).ok_or("search requires a <query>")?;
+    let project = flag_val(args, "-p");
+
+    let store = open_store()?;
+    let results = store
+        .search(query, project, 10)
+        .map_err(|e| format!("search: {e}"))?;
+
+    if results.is_empty() {
+        println!("No results found.");
+        return Ok(());
+    }
+
+    for (i, r) in results.iter().enumerate() {
+        let preview = truncate(&r.content, 200);
+        println!(
+            "{:>3}. [{:.4}] {} | {} | {}",
+            i + 1,
+            r.rank,
+            r.project,
+            r.obs_type,
+            r.title,
+        );
+        println!("     {preview}");
+    }
+
+    Ok(())
+}
+
+fn cmd_save(args: &[String]) -> Result<(), String> {
+    let title = find_positional(args, 0).ok_or("save requires <title>")?;
+    let content = find_positional(args, 1).ok_or("save requires <content>")?;
+
+    let obs_type = flag_val(args, "--type").unwrap_or("learning");
+    let topic_key = flag_val(args, "--topic");
+    let source = flag_val(args, "--source").unwrap_or("agent");
+    let project = flag_val(args, "-p")
+        .map(|s| s.to_string())
+        .unwrap_or_else(project_from_cwd);
+    let session_id = env::var("MUZZLE_SESSION_ID").unwrap_or_else(|_| "manual".to_string());
+
+    let store = open_store()?;
+    let cwd = env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    store
+        .register_session(&session_id, &project, &cwd)
+        .map_err(|e| format!("register session: {e}"))?;
+
+    let id = store
+        .save_observation(store::NewObservation {
+            session_id,
+            obs_type: obs_type.to_string(),
+            title: title.to_string(),
+            content: content.to_string(),
+            project,
+            scope: None,
+            topic_key: topic_key.map(|s| s.to_string()),
+            source: source.to_string(),
+        })
+        .map_err(|e| format!("save: {e}"))?;
+
+    println!("Saved observation #{id}");
+    Ok(())
+}
+
+fn cmd_capture(args: &[String]) -> Result<(), String> {
+    let changelog_path = args.first().ok_or("capture requires <changelog-path>")?;
+    let session_id = args.get(1).ok_or("capture requires <session-id>")?;
+    let project = args.get(2).ok_or("capture requires <project>")?;
+
+    let changelog =
+        fs::read_to_string(changelog_path).map_err(|e| format!("read changelog: {e}"))?;
+
+    let summary = capture::parse_changelog(&changelog);
+    if summary.is_empty() {
+        eprintln!("No mutations found in changelog.");
+        return Ok(());
+    }
+
+    let store = open_store()?;
+    let cwd = env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    store
+        .register_session(session_id, project, &cwd)
+        .map_err(|e| format!("register session: {e}"))?;
+
+    let id = store
+        .save_observation(store::NewObservation {
+            session_id: session_id.to_string(),
+            obs_type: "session_summary".to_string(),
+            title: format!("Session {session_id}"),
+            content: summary,
+            project: project.to_string(),
+            scope: None,
+            topic_key: None,
+            source: "changelog".to_string(),
+        })
+        .map_err(|e| format!("save: {e}"))?;
+
+    eprintln!("Captured session summary #{id}");
+    Ok(())
+}
+
+fn cmd_context(args: &[String]) -> Result<(), String> {
+    let project = args
+        .first()
+        .map(|s| s.to_string())
+        .unwrap_or_else(project_from_cwd);
+
+    let store = open_store()?;
+    let observations = store
+        .recent_context(&project, 10)
+        .map_err(|e| format!("recent_context: {e}"))?;
+
+    if observations.is_empty() {
+        println!("No observations for project '{project}'.");
+        return Ok(());
+    }
+
+    println!("# Context: {project}\n");
+    for obs in &observations {
+        let preview = truncate(&obs.content, 200);
+        println!(
+            "- **{}** [{}]: {}\n  {}\n",
+            obs.obs_type, obs.source, obs.title, preview
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_inject(args: &[String]) -> Result<(), String> {
+    let project = args
+        .first()
+        .map(|s| s.to_string())
+        .unwrap_or_else(project_from_cwd);
+
+    let store = open_store()?;
+    let observations = store
+        .recent_context(&project, 10)
+        .map_err(|e| format!("recent_context: {e}"))?;
+
+    let context = inject::format_context(&observations, &project);
+    if context.is_empty() {
+        println!("{{}}");
+        return Ok(());
+    }
+
+    // JSON-escape the markdown content.
+    let escaped = serde_json::to_string(&context).map_err(|e| format!("json escape: {e}"))?;
+
+    println!(
+        "{{\"hookSpecificOutput\":{{\"hookEventName\":\"SessionStart\",\"additionalContext\":{escaped}}}}}"
+    );
+    Ok(())
+}
+
+fn cmd_stats() -> Result<(), String> {
+    let store = open_store()?;
+    let stats = store.stats().map_err(|e| format!("stats: {e}"))?;
+
+    println!("Sessions:     {}", stats.total_sessions);
+    println!("Observations: {}", stats.total_observations);
+    println!("Projects:     {}", stats.projects.join(", "));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Positional arg extraction (skips flags and their values)
+// ---------------------------------------------------------------------------
+
+/// Find the Nth positional argument in `args`, skipping flags and flag values.
+///
+/// A flag is any arg starting with `-`. The next arg after a flag is assumed
+/// to be its value and is also skipped.
+fn find_positional(args: &[String], n: usize) -> Option<&str> {
+    let mut count = 0usize;
+    let mut skip_next = false;
+
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg.starts_with('-') {
+            skip_next = true; // skip the flag's value
+            continue;
+        }
+        if count == n {
+            return Some(arg.as_str());
+        }
+        count += 1;
+    }
+    None
+}
