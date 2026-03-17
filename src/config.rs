@@ -198,13 +198,25 @@ pub fn validate_workspace() -> Result<PathBuf, String> {
     }
 }
 
-/// Parse a comma-separated list of paths, trimming whitespace.
+/// Parse a comma-separated list of paths, trimming whitespace and expanding `~`.
 fn parse_path_list(s: &str) -> Vec<PathBuf> {
+    let home_str = home().to_string_lossy().to_string();
     s.split(',')
         .map(|p| p.trim())
         .filter(|p| !p.is_empty())
-        .map(PathBuf::from)
+        .map(|p| expand_tilde(p, &home_str))
         .collect()
+}
+
+/// Expand leading `~/` to the home directory.
+fn expand_tilde(path: &str, home_str: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        PathBuf::from(format!("{}/{}", home_str, rest))
+    } else if path == "~" {
+        PathBuf::from(home_str)
+    } else {
+        PathBuf::from(path)
+    }
 }
 
 // ── State directory ─────────────────────────────────────────────────
@@ -234,7 +246,7 @@ pub fn state_dir() -> PathBuf {
     }
 
     if let Some(sd) = read_config_key("state_dir") {
-        return PathBuf::from(sd);
+        return expand_tilde(&sd, &home().to_string_lossy());
     }
 
     // XDG_STATE_HOME fallback
@@ -660,6 +672,25 @@ mod tests {
                 PathBuf::from("/d"),
             ]
         );
+    }
+
+    #[test]
+    fn test_parse_path_list_expands_tilde() {
+        let paths = parse_path_list("~/src/cn, ~/src/muzzle");
+        let h = home();
+        assert_eq!(paths, vec![h.join("src/cn"), h.join("src/muzzle"),]);
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let h = home().to_string_lossy().to_string();
+        assert_eq!(
+            expand_tilde("~/foo", &h),
+            PathBuf::from(format!("{}/foo", h))
+        );
+        assert_eq!(expand_tilde("~", &h), PathBuf::from(&h));
+        assert_eq!(expand_tilde("/abs/path", &h), PathBuf::from("/abs/path"));
+        assert_eq!(expand_tilde("relative", &h), PathBuf::from("relative"));
     }
 
     #[test]

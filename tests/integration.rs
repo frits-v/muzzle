@@ -31,8 +31,9 @@ fn read_config_key(key: &str) -> Option<String> {
 }
 
 /// Resolve the first workspace path the same way the binary does.
+/// Order matches config::workspaces(): env vars always override config.
 fn test_workspace() -> String {
-    // New multi-workspace env
+    // 1. New multi-workspace env (highest priority)
     if let Ok(val) = std::env::var("MUZZLE_WORKSPACES") {
         if let Some(first) = val.split(',').next() {
             let first = first.trim();
@@ -41,7 +42,13 @@ fn test_workspace() -> String {
             }
         }
     }
-    // New multi-workspace config key
+    // 2. Legacy single workspace env (overrides config)
+    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
+        if !ws.is_empty() {
+            return ws;
+        }
+    }
+    // 3. New multi-workspace config key
     if let Some(val) = read_config_key("workspaces") {
         if let Some(first) = val.split(',').next() {
             let first = first.trim();
@@ -50,12 +57,7 @@ fn test_workspace() -> String {
             }
         }
     }
-    // Legacy single workspace
-    if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
-        if !ws.is_empty() {
-            return ws;
-        }
-    }
+    // 4. Legacy single workspace config key
     if let Some(ws) = read_config_key("workspace") {
         return ws;
     }

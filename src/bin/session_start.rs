@@ -281,7 +281,8 @@ fn emit_context(text: &str) {
 fn update_symlink(session_id: &str) {
     let symlink = config::changelog_symlink();
     let _ = fs::remove_file(&symlink);
-    let target = format!(".claude-changelog-{}.md", session_id);
+    // Target is relative to symlink's parent (state_dir/)
+    let target = format!("changelogs/{}.md", session_id);
     let _ = std::os::unix::fs::symlink(&target, &symlink);
 }
 
