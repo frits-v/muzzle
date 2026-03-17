@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 
 [dependencies.muzzle]
-path = ".."
+path = "../hooks"
 
 # Workspace exclusion — cargo-fuzz manages its own build
 [workspace]
