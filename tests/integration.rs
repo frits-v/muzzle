@@ -8,36 +8,78 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-/// Resolve the workspace path the same way the binary does.
-///
-/// 1. MUZZLE_WORKSPACE env var
-/// 2. `workspace` key in ~/.config/muzzle/config
-/// 3. $HOME/src default
+/// Read a config key from ~/.config/muzzle/config.
+fn read_config_key(key: &str) -> Option<String> {
+    let home = std::env::var("HOME").expect("HOME not set");
+    let config_path = format!("{}/.config/muzzle/config", home);
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                let v = v.trim();
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve the first workspace path the same way the binary does.
 fn test_workspace() -> String {
+    // New multi-workspace env
+    if let Ok(val) = std::env::var("MUZZLE_WORKSPACES") {
+        if let Some(first) = val.split(',').next() {
+            let first = first.trim();
+            if !first.is_empty() {
+                return first.to_string();
+            }
+        }
+    }
+    // New multi-workspace config key
+    if let Some(val) = read_config_key("workspaces") {
+        if let Some(first) = val.split(',').next() {
+            let first = first.trim();
+            if !first.is_empty() {
+                return first.to_string();
+            }
+        }
+    }
+    // Legacy single workspace
     if let Ok(ws) = std::env::var("MUZZLE_WORKSPACE") {
         if !ws.is_empty() {
             return ws;
         }
     }
+    if let Some(ws) = read_config_key("workspace") {
+        return ws;
+    }
     let home = std::env::var("HOME").expect("HOME not set");
-    let config_path = format!("{}/.config/muzzle/config", home);
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                if k.trim() == "workspace" {
-                    let v = v.trim();
-                    if !v.is_empty() {
-                        return v.to_string();
-                    }
-                }
-            }
+    format!("{}/src", home)
+}
+
+/// Resolve the state directory the same way the binary does.
+fn test_state_dir() -> String {
+    if let Ok(sd) = std::env::var("MUZZLE_STATE_DIR") {
+        if !sd.is_empty() {
+            return sd;
         }
     }
-    format!("{}/src", home)
+    if let Some(sd) = read_config_key("state_dir") {
+        return sd;
+    }
+    if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
+        if !xdg.is_empty() {
+            return format!("{}/muzzle", xdg);
+        }
+    }
+    let home = std::env::var("HOME").expect("HOME not set");
+    format!("{}/.local/state/muzzle", home)
 }
 
 /// Helper: run a binary with JSON on stdin, return (stdout, stderr, exit_code).
@@ -206,20 +248,20 @@ impl Drop for TestSessionGuard {
 ///
 /// Writes a PID marker for the current process (which is the PPID of any
 /// child processes we spawn) and returns a guard that cleans up on drop.
+/// PID markers and spec files go to the state directory (XDG).
 fn setup_fake_session(session_id: &str) -> TestSessionGuard {
-    let workspace = test_workspace();
+    let sd = test_state_dir();
 
     let pid = std::process::id();
-    let marker_dir = format!("{}/.claude-tmp/by-pid", workspace);
+    let marker_dir = format!("{}/by-pid", sd);
     let marker_path = PathBuf::from(format!("{}/{}", marker_dir, pid));
 
     std::fs::create_dir_all(&marker_dir).expect("create marker dir");
     std::fs::write(&marker_path, session_id).expect("write marker");
 
-    let spec_path = PathBuf::from(format!(
-        "{}/.claude-worktrees-{}.env",
-        workspace, session_id
-    ));
+    let spec_dir = format!("{}/specs", sd);
+    std::fs::create_dir_all(&spec_dir).expect("create specs dir");
+    let spec_path = PathBuf::from(format!("{}/{}.env", spec_dir, session_id));
 
     TestSessionGuard {
         marker_path,
