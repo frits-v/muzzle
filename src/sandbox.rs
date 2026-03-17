@@ -332,23 +332,54 @@ fn is_private_system_path(path: &str) -> bool {
 
 /// Check if a file path is gitignored at a given root.
 ///
-/// Uses the `ignore` crate (from ripgrep) to parse `<root>/.gitignore` with
+/// Uses the `ignore` crate (from ripgrep) to parse gitignore files with
 /// full gitignore semantics: globs, negation, directory-only patterns,
 /// anchoring, `**/` prefixes, etc.
 ///
-/// Returns `true` if ignored, `false` if not ignored or `.gitignore` is absent.
+/// Checks three sources (matching git's own precedence):
+/// 1. `<root>/.gitignore` — repo-local patterns
+/// 2. `<root>/.git/info/exclude` — repo-local unshared patterns
+/// 3. Global gitignore (`$XDG_CONFIG_HOME/git/ignore` or `~/.config/git/ignore`)
+///
+/// Returns `true` if ignored, `false` if not ignored or no gitignore files exist.
 fn is_path_gitignored(root: &str, path: &str, is_dir: bool) -> bool {
     use ignore::gitignore::GitignoreBuilder;
 
     let mut builder = GitignoreBuilder::new(root);
-    let gitignore_path = format!("{}/.gitignore", root);
-    if builder.add(&gitignore_path).is_some() {
-        return false; // .gitignore not found or parse error → not ignored
+
+    // Add sources, skipping NotFound errors (file may not exist).
+    // Non-NotFound errors (permission denied, parse errors) → bail out as "not ignored".
+    for source in &[
+        format!("{}/.gitignore", root),
+        format!("{}/.git/info/exclude", root),
+        global_gitignore_path(),
+    ] {
+        if let Some(err) = builder.add(source) {
+            if err
+                .io_error()
+                .is_some_and(|e| e.kind() != std::io::ErrorKind::NotFound)
+            {
+                return false; // IO or parse error → conservatively treat as not ignored
+            }
+        }
     }
+
     match builder.build() {
         Ok(gi) => gi.matched_path_or_any_parents(path, is_dir).is_ignore(),
         Err(_) => false,
     }
+}
+
+/// Resolve the global gitignore path.
+///
+/// Checks `$XDG_CONFIG_HOME/git/ignore` first, then falls back to
+/// `~/.config/git/ignore` (git's default).
+fn global_gitignore_path() -> String {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        return format!("{}/git/ignore", xdg);
+    }
+    let home = config::home();
+    format!("{}/.config/git/ignore", home.to_string_lossy())
 }
 
 /// Check if a subpath (relative to a repo root) is a persistent config path.
