@@ -34,8 +34,14 @@ fn run() {
 
     let repo = &args[1];
 
-    // Validate workspace exists before attempting anything
-    if let Err(msg) = config::validate_workspace() {
+    // Validate all workspaces exist before attempting anything
+    if let Err(msg) = config::validate_workspaces() {
+        muzzle::log::error("ensure-worktree", &msg);
+        std::process::exit(1);
+    }
+
+    // Ensure state directory for spec files
+    if let Err(msg) = config::ensure_state_subdirs() {
         muzzle::log::error("ensure-worktree", &msg);
         std::process::exit(1);
     }

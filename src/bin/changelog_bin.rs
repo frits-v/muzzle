@@ -15,8 +15,8 @@ fn main() {
 }
 
 fn run() {
-    // Skip when not running inside the configured workspace
-    if !config::is_in_workspace() {
+    // Skip when not running inside any configured workspace
+    if !config::is_in_any_workspace() {
         std::process::exit(0);
     }
 
