@@ -60,7 +60,6 @@ fn project_from_cwd() -> String {
     {
         if output.status.success() {
             let toplevel = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let path = std::path::Path::new(&toplevel);
             return parent_slash_base(std::path::Path::new(&toplevel));
         }
     }
@@ -93,16 +92,12 @@ fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|s| s.as_str())
 }
 
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        s
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
     } else {
-        // Find a char boundary at or before max.
-        let mut end = max;
-        while end > 0 && !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        &s[..end]
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}...")
     }
 }
 
@@ -139,11 +134,7 @@ fn cmd_search(args: &[String]) -> Result<(), String> {
     }
 
     for (i, r) in results.iter().enumerate() {
-        let preview = if r.content.len() > 200 {
-            format!("{}...", truncate(&r.content, 200))
-        } else {
-            r.content.clone()
-        };
+        let preview = truncate(&r.content, 200);
         println!(
             "{:>3}. [{:.4}] {} | {} | {}",
             i + 1,
@@ -254,11 +245,7 @@ fn cmd_context(args: &[String]) -> Result<(), String> {
 
     println!("# Context: {project}\n");
     for obs in &observations {
-        let preview = if obs.content.len() > 200 {
-            format!("{}...", truncate(&obs.content, 200))
-        } else {
-            obs.content.clone()
-        };
+        let preview = truncate(&obs.content, 200);
         println!(
             "- **{}** [{}]: {}\n  {}\n",
             obs.obs_type, obs.source, obs.title, preview

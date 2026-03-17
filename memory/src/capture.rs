@@ -160,11 +160,9 @@ fn extract_backtick_value(s: &str) -> Option<String> {
 /// - `**mcp__…**`              — catch-all for direct MCP tool entries
 ///
 /// Note: The `**mcp__` prefix check matches only changelog entries where the
-/// tool name itself starts with `mcp__` (e.g., `**mcp__datadog__get_logs**`).
-/// Bash commands that happen to contain `mcp__` as a substring would also match,
-/// but this is acceptable — muzzle's changelog format wraps MCP tool names in
-/// `**bold**` markers, and Bash entries use `**Bash**:` or `**COMMIT**` prefixes,
-/// so the overlap is negligible in practice.
+/// bold-wrapped token itself starts with `mcp__`
+/// (e.g., `**mcp__datadog__get_logs**`). Bash entries produced by the changelog
+/// writer always begin with `**Bash**:`, so they cannot match this check.
 fn is_external_op(rest: &str) -> bool {
     rest.starts_with("**PR Created**")
         || rest.starts_with("**Branch Created**")

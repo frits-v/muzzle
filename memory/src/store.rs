@@ -36,6 +36,7 @@ pub struct Observation {
     pub topic_key: Option<String>,
     pub source: String,
     pub revision_count: i64,
+    /// Reserved for future content de-duplication tracking (not yet incremented).
     pub duplicate_count: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -152,7 +153,7 @@ impl Store {
                 topic_key TEXT,
                 source TEXT NOT NULL DEFAULT 'changelog',
                 revision_count INTEGER NOT NULL DEFAULT 1,
-                duplicate_count INTEGER NOT NULL DEFAULT 0,
+                duplicate_count INTEGER NOT NULL DEFAULT 0, -- reserved for future de-duplication; not yet incremented
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 deleted_at TEXT
@@ -164,6 +165,9 @@ impl Store {
                 ON observations(session_id);
             CREATE INDEX IF NOT EXISTS idx_obs_topic
                 ON observations(project, scope, topic_key);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_obs_topic_unique
+                ON observations(project, scope, topic_key)
+                WHERE topic_key IS NOT NULL AND deleted_at IS NULL;
             CREATE INDEX IF NOT EXISTS idx_obs_created
                 ON observations(created_at DESC);
 
