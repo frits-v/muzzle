@@ -27,6 +27,7 @@ pub struct NewObservation {
 pub struct Observation {
     pub id: i64,
     pub session_id: String,
+    #[serde(rename = "type")]
     pub obs_type: String,
     pub title: String,
     pub content: String,
@@ -272,12 +273,18 @@ impl Store {
     // -- Queries --------------------------------------------------------------
 
     /// Full-text search. Returns results ordered by relevance.
+    ///
+    /// User input is wrapped in double quotes to force FTS5 phrase matching
+    /// and prevent query syntax injection (`AND`, `OR`, `NOT`, `col:`, `*`).
     pub fn search(
         &self,
         query: &str,
         project: Option<&str>,
         limit: i64,
     ) -> rusqlite::Result<Vec<SearchResult>> {
+        // Sanitize: wrap in double quotes (phrase query) and escape embedded quotes.
+        let safe_query = format!("\"{}\"", query.replace('"', "\"\""));
+
         let sql = if project.is_some() {
             "SELECT o.id, o.session_id, o.type, o.title, o.content, o.project,
                     o.scope, o.topic_key, o.source, o.revision_count,
@@ -306,9 +313,9 @@ impl Store {
         let mut stmt = self.conn.prepare(sql)?;
 
         let rows = if let Some(proj) = project {
-            stmt.query_map(params![query, proj, limit], Self::map_search_row)?
+            stmt.query_map(params![safe_query, proj, limit], Self::map_search_row)?
         } else {
-            stmt.query_map(params![query, limit], Self::map_search_row)?
+            stmt.query_map(params![safe_query, limit], Self::map_search_row)?
         };
 
         rows.collect()
@@ -647,5 +654,24 @@ mod tests {
         assert_eq!(stats.total_sessions, 2);
         assert_eq!(stats.total_observations, 3);
         assert_eq!(stats.projects, vec!["alpha", "beta"]);
+    }
+
+    // 8. FTS5 special character safety -------------------------------------------
+
+    #[test]
+    fn test_search_special_chars_safe() {
+        let store = test_store();
+        seed_session(&store, "s1", "proj");
+        store
+            .save_observation(make_obs("s1", "proj", "Normal title", "Normal content"))
+            .unwrap();
+
+        // These should not cause FTS5 parse errors.
+        assert!(store
+            .search("title:secret OR content:password", None, 10)
+            .is_ok());
+        assert!(store.search("test AND \"quoted\"", None, 10).is_ok());
+        assert!(store.search("test*", None, 10).is_ok());
+        assert!(store.search("", None, 10).is_ok());
     }
 }

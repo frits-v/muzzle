@@ -43,24 +43,37 @@ fn open_store() -> Result<store::Store, String> {
 }
 
 /// Derive project name from CWD: `parent_basename/basename`.
+///
+/// Uses `git rev-parse --show-toplevel` first so that worktree paths
+/// (e.g. `~/src/cn/Hermosa/.worktrees/abc123/`) resolve to the main
+/// repo (`cn/Hermosa`). Falls back to raw CWD if not in a git repo.
 fn project_from_cwd() -> String {
+    // Try git toplevel first (resolves worktrees to main repo).
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+    {
+        if output.status.success() {
+            let toplevel = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let path = std::path::Path::new(&toplevel);
+            let base = path.file_name().unwrap_or_default().to_string_lossy();
+            let parent = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .unwrap_or_default()
+                .to_string_lossy();
+            return format!("{parent}/{base}");
+        }
+    }
+    // Fallback: CWD parent/basename.
     let cwd = env::current_dir().unwrap_or_default();
-    let base = cwd
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let base = cwd.file_name().unwrap_or_default().to_string_lossy();
     let parent = cwd
         .parent()
         .and_then(|p| p.file_name())
         .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    if parent.is_empty() {
-        base
-    } else {
-        format!("{parent}/{base}")
-    }
+        .to_string_lossy();
+    format!("{parent}/{base}")
 }
 
 /// Simple flag lookup: find `flag` in `args` and return the next element.
