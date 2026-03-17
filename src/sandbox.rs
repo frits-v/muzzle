@@ -108,20 +108,28 @@ pub fn check_path_with_context(
 
                 // FR-WE-3: Allow writes to worktree paths
                 if resolved.contains("/.worktrees/") {
-                    // But redirect .agents/ writes back to main checkout for persistence.
-                    // E.g. <repo>/.worktrees/<id>/.agents/foo.md → <repo>/.agents/foo.md
+                    // Redirect .agents/ and .claude/ writes to main checkout when
+                    // gitignored. If the repo tracks these dirs, allow in worktree.
+                    // Detection: parse <worktree>/.gitignore natively (no process spawn).
                     const WORKTREES_SEG: &str = "/.worktrees/";
                     if let Some(wt_idx) = resolved.find(WORKTREES_SEG) {
                         let after_wt = &resolved[wt_idx..]; // "/.worktrees/<id>/..."
-                                                            // Find the slash after the worktree ID
                         if let Some(id_slash) = after_wt[WORKTREES_SEG.len()..].find('/') {
                             let after_id = &after_wt[WORKTREES_SEG.len() + id_slash..]; // "/..." after ID
                             if is_persistent_repo_config(after_id) {
+                                let wt_root = &resolved[..wt_idx + WORKTREES_SEG.len() + id_slash];
                                 let repo_prefix = &resolved[..wt_idx];
-                                return PathDecision::Deny(format!(
-                                    "REDIRECT: config path must persist across sessions. Write to: {}{}",
-                                    repo_prefix, after_id
-                                ));
+                                // Check the actual file path against .gitignore.
+                                // is_dir=false because we're checking a file write.
+                                if is_path_gitignored(wt_root, repo_prefix, &resolved, false) {
+                                    return PathDecision::Deny(format!(
+                                        "REDIRECT: config path must persist across sessions. \
+                                         Write to: {}{}",
+                                        repo_prefix, after_id
+                                    ));
+                                }
+                                // Not ignored → tracked by git → allow in worktree
+                                return PathDecision::Allow;
                             }
                         }
                     }
@@ -322,6 +330,58 @@ fn is_private_system_path(path: &str) -> bool {
     path.starts_with("/private/etc/") || path.starts_with("/private/var/")
 }
 
+/// Check if a file path is gitignored.
+///
+/// Uses the `ignore` crate (from ripgrep) to parse gitignore files with
+/// full gitignore semantics: globs, negation, directory-only patterns,
+/// anchoring, `**/` prefixes, etc.
+///
+/// Checks three sources (matching git's own precedence):
+/// 1. `<root>/.gitignore` — worktree-local patterns
+/// 2. `<repo_root>/.git/info/exclude` — repo-level unshared patterns
+/// 3. Global gitignore via `core.excludesFile` (`build_global()`)
+///
+/// `root` is the worktree root (used for `.gitignore` and path matching).
+/// `repo_root` is the main checkout root (used for `.git/info/exclude`,
+/// since in a git worktree `.git` is a file, not a directory).
+///
+/// Returns `true` if ignored, `false` if not ignored or no gitignore files exist.
+fn is_path_gitignored(root: &str, repo_root: &str, path: &str, is_dir: bool) -> bool {
+    use ignore::gitignore::GitignoreBuilder;
+
+    let mut builder = GitignoreBuilder::new(root);
+
+    // Add sources, skipping path-not-found errors (file may not exist).
+    // In real worktrees .git is a file, so .git/info/exclude under the worktree
+    // root would yield ENOTDIR — we skip that too.
+    for source in &[
+        format!("{}/.gitignore", root),
+        format!("{}/.git/info/exclude", repo_root),
+    ] {
+        if let Some(err) = builder.add(source) {
+            if let Some(io_err) = err.io_error() {
+                match io_err.kind() {
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => {}
+                    _ => return false, // permission denied, etc. → bail conservatively
+                }
+            }
+        }
+    }
+
+    // Check repo-local patterns first.
+    if let Ok(gi) = builder.build() {
+        if gi.matched_path_or_any_parents(path, is_dir).is_ignore() {
+            return true;
+        }
+    }
+
+    // Check global gitignore (reads core.excludesFile from git config).
+    let (global_gi, _) = GitignoreBuilder::new(root).build_global();
+    global_gi
+        .matched_path_or_any_parents(path, is_dir)
+        .is_ignore()
+}
+
 /// Check if a subpath (relative to a repo root) is a persistent config path.
 ///
 /// Used by both `is_config_path` (FR-WE-4) and the FR-WE-3 worktree redirect
@@ -331,19 +391,32 @@ fn is_private_system_path(path: &str) -> bool {
 /// `subpath` starts with "/" — e.g. "/.agents/foo.md", "/CLAUDE.md".
 /// Trailing slashes in `starts_with` prevent false positives (e.g. `.agentsfoo`).
 fn is_persistent_repo_config(subpath: &str) -> bool {
+    // .agents/ and .claude/ are often gitignored local config. The FR-WE-3 redirect
+    // path uses `is_path_gitignored()` (backed by the `ignore` crate) to distinguish:
+    // ignored paths redirect to the main checkout, tracked paths are allowed in worktrees.
     subpath.starts_with("/.agents/")
         || subpath == "/.agents"
         || subpath.starts_with("/.claude/")
         || subpath == "/.claude"
-        || subpath == "/CLAUDE.md"
-        || subpath == "/AGENTS.md"
 }
 
-/// Check if a path is a project config path (FR-WE-4).
+/// Check if a subpath is a committed repo file that should be editable in worktrees.
 ///
-/// Matches both workspace-level config (e.g. `<ws>/.agents/`) and per-repo
-/// config (e.g. `<ws>/ml-pipeline/.agents/`, `<ws>/web-app/CLAUDE.md`).
-/// Per-repo config paths must persist across sessions, not go to worktrees.
+/// Unlike `.agents/` and `.claude/` (gitignored local config), `CLAUDE.md` and
+/// `AGENTS.md` are committed files. They should be editable in worktrees and on
+/// main checkouts — not redirected.
+fn is_committed_repo_file(subpath: &str) -> bool {
+    subpath == "/CLAUDE.md" || subpath == "/AGENTS.md"
+}
+
+/// Check if a path is a project config or committed repo file (FR-WE-4).
+///
+/// Matches both workspace-level paths (e.g. `<ws>/.agents/`, `<ws>/CLAUDE.md`)
+/// and per-repo paths (e.g. `<ws>/acme-api/.agents/`, `<ws>/web-app/CLAUDE.md`).
+///
+/// Two categories:
+/// - **Persistent config** (`.agents/`, `.claude/`): gitignored, redirect to main checkout
+/// - **Committed files** (`CLAUDE.md`, `AGENTS.md`): version-controlled, allowed in worktrees
 fn is_config_path(path: &str, ws: &str) -> bool {
     let claude_prefix = format!("{}/.claude/", ws);
     let agents_prefix = format!("{}/.agents/", ws);
@@ -363,11 +436,11 @@ fn is_config_path(path: &str, ws: &str) -> bool {
     // Note: trailing slashes in starts_with() prevent false positives like .agentsfoo/
     let ws_prefix = format!("{}/", ws);
     if let Some(rest) = path.strip_prefix(&ws_prefix) {
-        // rest = "ml-pipeline/.agents/foo.md" or "web-app/CLAUDE.md"
+        // rest = "acme-api/.agents/foo.md" or "web-app/CLAUDE.md"
         // First segment is the repo name; after_repo is everything after it
         if let Some(slash_idx) = rest.find('/') {
             let after_repo = &rest[slash_idx..];
-            if is_persistent_repo_config(after_repo) {
+            if is_persistent_repo_config(after_repo) || is_committed_repo_file(after_repo) {
                 return true;
             }
         }
@@ -760,9 +833,9 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Writing to <repo>/.agents/ should be allowed (not redirected to worktree)
         let paths = [
-            format!("{}/ml-pipeline/.agents/learnings/test.md", ws_str),
+            format!("{}/acme-api/.agents/learnings/test.md", ws_str),
             format!("{}/web-app/.agents/handoff/test.md", ws_str),
-            format!("{}/ml-pipeline/.agents/council/report.md", ws_str),
+            format!("{}/acme-api/.agents/council/report.md", ws_str),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -783,7 +856,7 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Per-repo CLAUDE.md and AGENTS.md should be allowed (not redirected)
         let paths = [
-            format!("{}/ml-pipeline/CLAUDE.md", ws_str),
+            format!("{}/acme-api/CLAUDE.md", ws_str),
             format!("{}/web-app/AGENTS.md", ws_str),
             format!("{}/api-server/.claude/hooks/test.rs", ws_str),
         ];
@@ -804,26 +877,21 @@ mod tests {
         let sess = sess_with_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
-        // All persistent config paths inside worktrees should redirect to main checkout.
-        // This verifies the shared is_persistent_repo_config() predicate covers all types.
+
+        // Create temp worktree dirs with .gitignore that ignores .agents/ and .claude/
+        let wt1 = format!("{}/redir-test/.worktrees/abc12345", ws_str);
+        let wt2 = format!("{}/redir-test2/.worktrees/xyz99999", ws_str);
+        std::fs::create_dir_all(&wt1).expect("create wt1");
+        std::fs::create_dir_all(&wt2).expect("create wt2");
+        std::fs::write(format!("{}/.gitignore", wt1), ".agents/\n.claude/\n")
+            .expect("write .gitignore wt1");
+        std::fs::write(format!("{}/.gitignore", wt2), ".agents/\n.claude/\n")
+            .expect("write .gitignore wt2");
+
         let paths = [
-            // .agents/
-            format!(
-                "{}/ml-pipeline/.worktrees/abc12345/.agents/learnings/test.md",
-                ws_str
-            ),
-            format!(
-                "{}/web-app/.worktrees/xyz99999/.agents/handoff/notes.md",
-                ws_str
-            ),
-            // CLAUDE.md / AGENTS.md
-            format!("{}/ml-pipeline/.worktrees/abc12345/CLAUDE.md", ws_str),
-            format!("{}/web-app/.worktrees/xyz99999/AGENTS.md", ws_str),
-            // .claude/
-            format!(
-                "{}/ml-pipeline/.worktrees/abc12345/.claude/hooks/test.rs",
-                ws_str
-            ),
+            format!("{}/.agents/learnings/test.md", wt1),
+            format!("{}/.agents/handoff/notes.md", wt2),
+            format!("{}/.claude/hooks/test.rs", wt1),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -840,7 +908,6 @@ mod tests {
                     p,
                     msg
                 );
-                // Ensure the redirect target does NOT contain /.worktrees/
                 let target = msg.split("Write to: ").nth(1).unwrap_or("");
                 assert!(
                     !target.contains("/.worktrees/"),
@@ -849,6 +916,80 @@ mod tests {
                 );
             }
         }
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(format!("{}/redir-test", ws_str));
+        let _ = std::fs::remove_dir_all(format!("{}/redir-test2", ws_str));
+    }
+
+    #[test]
+    fn test_worktree_committed_files_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        // CLAUDE.md and AGENTS.md are committed repo files — allow in worktrees
+        let paths = [
+            format!("{}/acme-api/.worktrees/abc12345/CLAUDE.md", ws_str),
+            format!("{}/web-app/.worktrees/xyz99999/AGENTS.md", ws_str),
+        ];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "expected ALLOW for committed file in worktree {:?}, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_worktree_agents_allowed_when_not_gitignored() {
+        // When .agents/ is NOT in .gitignore, it's tracked → allow in worktree.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        // Worktree with .gitignore that does NOT ignore .agents/
+        let wt_root = format!("{}/tracked-repo/.worktrees/abc12345", ws_str);
+        std::fs::create_dir_all(&wt_root).expect("create wt dir");
+        std::fs::write(format!("{}/.gitignore", wt_root), "target/\n*.log\n")
+            .expect("write .gitignore");
+
+        let test_path = format!("{}/.agents/brainstorm/notes.md", wt_root);
+        let result = check_path(&test_path, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW for .agents/ not in .gitignore, got {:?}",
+            result
+        );
+
+        let _ = std::fs::remove_dir_all(format!("{}/tracked-repo", ws_str));
+    }
+
+    #[test]
+    fn test_worktree_agents_allowed_when_no_gitignore() {
+        // When no .gitignore exists at all, nothing is ignored → allow.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        let wt_root = format!("{}/nogi-repo/.worktrees/abc12345", ws_str);
+        std::fs::create_dir_all(&wt_root).expect("create wt dir");
+        // No .gitignore file at all
+
+        let test_path = format!("{}/.agents/brainstorm/notes.md", wt_root);
+        let result = check_path(&test_path, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "expected ALLOW when no .gitignore exists, got {:?}",
+            result
+        );
+
+        let _ = std::fs::remove_dir_all(format!("{}/nogi-repo", ws_str));
     }
 
     #[test]
@@ -859,7 +1000,7 @@ mod tests {
         let ws_str = ws.to_string_lossy();
         // Regular worktree files should still be allowed (not redirected)
         let paths = [
-            format!("{}/ml-pipeline/.worktrees/abc12345/dags/train.py", ws_str),
+            format!("{}/acme-api/.worktrees/abc12345/dags/train.py", ws_str),
             format!("{}/web-app/.worktrees/abc12345/app/main.py", ws_str),
         ];
         for p in &paths {

@@ -47,12 +47,36 @@ make sizes            # Show release binary sizes
 make test-one NAME=x  # Run single test by name
 ```
 
+## Quality Gate
+
+Before committing any changes, run the full CI gate locally and ensure it passes:
+
+```bash
+mise run ci
+```
+
+This runs `cargo fmt --check`, `cargo clippy -D warnings`, `cargo check`, `rustdoc -D warnings`,
+all tests (unit + integration + claude_md), `shellcheck`, `shfmt`, `actionlint`, and
+`zizmor --pedantic`. All checks must be green before committing.
+
+After pushing, poll PR checks and review comments in a single loop for up to 10 minutes:
+
+- Wait for all CI checks to pass (`gh pr checks --watch --fail-fast`)
+- Check for reviewer comments (`gh api repos/frits-v/muzzle/pulls/{number}/comments`)
+- If CI fails: investigate the root cause, fix, push, and restart the loop
+- For each review comment:
+  - Actionable feedback (code change requested): implement the fix, push, and reply confirming what changed
+  - Good suggestion already addressed or agreement: react with thumbs-up
+  - Incorrect or inapplicable suggestion: react with thumbs-down and reply with a brief explanation why
+- Done when CI is green AND no unresolved review comments remain
+
 ## Key Design Decisions
 
 - **Three-layer sandbox**: Session resolution -> context-aware path checking -> git safety regex
 - **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`
 - **Lazy worktrees**: `WORKTREE_MISSING:<repo>` denials trigger `ensure-worktree` on-demand
-- **Config persistence**: `.agents/`, `CLAUDE.md`, `.claude/` always write to main checkout, never worktrees
+- **Config persistence**: `.agents/`, `.claude/` redirect to main checkout when gitignored; if tracked by git (dir exists in worktree), allowed in-place
+- **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
 - **Panic -> deny**: All hooks catch panics and deny rather than fail open
 
 ## Commit Convention
@@ -125,7 +149,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-194 tests (166 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
+198 tests (170 unit + 5 doc + 13 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
@@ -134,6 +158,7 @@ Test patterns:
 - Sandbox tests construct paths from `config::workspace()` for portability
 - Property tests use proptest strategies (256 cases each by default)
 - Fuzz targets require nightly: `cargo +nightly fuzz run <target>`
+- Use fictional repo names in tests (e.g. `acme-api`, `web-app`), never real company or project names
 
 ## Releases
 
@@ -176,5 +201,5 @@ Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
 
 ## Dependencies
 
-5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. No async runtime,
+6 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`, `ignore`. No async runtime,
 no network deps, no proc macros.
