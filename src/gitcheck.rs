@@ -71,6 +71,25 @@ static RE_TEE: LazyLock<Regex> =
 static RE_GIT_C_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|(\S+))"#).unwrap());
 
+// In-place file modification commands (bypass vectors)
+static RE_SED_INPLACE: LazyLock<Regex> = LazyLock::new(|| {
+    // sed -i '' 'pattern' file  OR  sed -i 'pattern' file  OR  sed -i.bak 'pattern' file
+    Regex::new(r"\bsed\s+-i\b").unwrap()
+});
+static RE_PERL_INPLACE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bperl\s+-[^\s]*i").unwrap());
+static RE_RUBY_INPLACE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bruby\s+-[^\s]*i").unwrap());
+
+// File copy/move commands
+static RE_CP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bcp\b").unwrap());
+static RE_MV: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bmv\b").unwrap());
+static RE_INSTALL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\binstall\b").unwrap());
+static RE_RSYNC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\brsync\b").unwrap());
+static RE_DD_OF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bdd\b[^;|&]*\bof=([^\s;|&]+)").unwrap());
+static RE_PATCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bpatch\b").unwrap());
+
 /// Run all 8 git safety checks against a Bash command.
 pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-1: Force push without --force-with-lease
@@ -253,6 +272,11 @@ pub fn check_worktree_enforcement(
 }
 
 /// Extract write-target paths from a Bash command.
+///
+/// Returns paths with optional prefixes:
+/// - No prefix: absolute write target from redirect/tee
+/// - `gitc:` prefix: git -C working directory (not a direct write target)
+/// - `rel:` prefix: relative path from a file-mutating command (sed -i, cp, mv, etc.)
 pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
@@ -288,7 +312,161 @@ pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
         }
     }
 
+    // In-place edit commands: extract the last non-option argument as the target file.
+    // These are the most common bypass vectors for Edit hook denials.
+    if RE_SED_INPLACE.is_match(cmd) {
+        if let Some(target) = extract_last_file_arg(cmd, "sed") {
+            push_write_path(&mut paths, &target);
+        }
+    }
+    if RE_PERL_INPLACE.is_match(cmd) {
+        if let Some(target) = extract_last_file_arg(cmd, "perl") {
+            push_write_path(&mut paths, &target);
+        }
+    }
+    if RE_RUBY_INPLACE.is_match(cmd) {
+        if let Some(target) = extract_last_file_arg(cmd, "ruby") {
+            push_write_path(&mut paths, &target);
+        }
+    }
+
+    // cp/mv/install/rsync: destination is the last argument
+    if RE_CP.is_match(cmd) {
+        if let Some(dest) = extract_copy_dest(cmd, "cp") {
+            push_write_path(&mut paths, &dest);
+        }
+    }
+    if RE_MV.is_match(cmd) {
+        if let Some(dest) = extract_copy_dest(cmd, "mv") {
+            push_write_path(&mut paths, &dest);
+        }
+    }
+    if RE_INSTALL.is_match(cmd) {
+        if let Some(dest) = extract_copy_dest(cmd, "install") {
+            push_write_path(&mut paths, &dest);
+        }
+    }
+    if RE_RSYNC.is_match(cmd) {
+        if let Some(dest) = extract_copy_dest(cmd, "rsync") {
+            push_write_path(&mut paths, &dest);
+        }
+    }
+
+    // dd of=<path>
+    for caps in RE_DD_OF.captures_iter(cmd) {
+        if let Some(m) = caps.get(1) {
+            let p = m.as_str().trim();
+            push_write_path(&mut paths, p);
+        }
+    }
+
+    // patch: target file is usually the last argument or via -o
+    if RE_PATCH.is_match(cmd) {
+        if let Some(target) = extract_last_file_arg(cmd, "patch") {
+            push_write_path(&mut paths, &target);
+        }
+    }
+
     paths
+}
+
+/// Push a write path, using `rel:` prefix for relative paths.
+fn push_write_path(paths: &mut Vec<String>, path: &str) {
+    if path.starts_with('/') {
+        paths.push(path.to_string());
+    } else if !path.is_empty() && !path.starts_with('-') {
+        paths.push(format!("rel:{}", path));
+    }
+}
+
+/// Extract the last non-option, non-pattern argument from a command.
+/// Used for sed -i, perl -i, ruby -i, patch — the file target is typically last.
+fn extract_last_file_arg(cmd: &str, tool: &str) -> Option<String> {
+    // Find the tool invocation and get everything after it
+    let tool_pattern = format!(r"\b{}\b", regex::escape(tool));
+    let re = Regex::new(&tool_pattern).ok()?;
+    let m = re.find(cmd)?;
+    let after_tool = &cmd[m.end()..];
+
+    // Split on pipe/semicolon/&&/< to isolate this command
+    // The < split prevents input redirects (< file.patch) from being parsed as arguments
+    let segment = after_tool
+        .split(['|', ';', '<'])
+        .next()
+        .unwrap_or(after_tool);
+    let segment = segment.split("&&").next().unwrap_or(segment);
+
+    // Get the last whitespace-delimited token that looks like a file path
+    // (not an option flag, not a quoted pattern)
+    let tokens: Vec<&str> = segment.split_whitespace().collect();
+    for &tok in tokens.iter().rev() {
+        let cleaned = tok.trim_matches(|c| c == '"' || c == '\'');
+        // Skip option flags
+        if cleaned.starts_with('-') {
+            continue;
+        }
+        // Skip empty strings and sed/awk patterns (contain /)
+        // but allow file paths that start with / or look like relative paths
+        if cleaned.is_empty() {
+            continue;
+        }
+        // Skip sed address/substitution patterns like '/pattern/d' or 's/foo/bar/'
+        if cleaned.starts_with('/') && cleaned.ends_with('/') {
+            continue;
+        }
+        if cleaned.contains("/d'") || cleaned.contains("/d\"") {
+            continue;
+        }
+        if cleaned.starts_with("s/") || cleaned.starts_with("'/") || cleaned.starts_with("\"/") {
+            continue;
+        }
+        // This looks like a file path
+        return Some(cleaned.to_string());
+    }
+    None
+}
+
+/// Extract the destination path from cp/mv/install/rsync commands.
+/// The destination is the last non-option argument.
+fn extract_copy_dest(cmd: &str, tool: &str) -> Option<String> {
+    let tool_pattern = format!(r"\b{}\b", regex::escape(tool));
+    let re = Regex::new(&tool_pattern).ok()?;
+    let m = re.find(cmd)?;
+    let after_tool = &cmd[m.end()..];
+
+    // Split on pipe/semicolon/&&
+    let segment = after_tool.split(['|', ';']).next().unwrap_or(after_tool);
+    let segment = segment.split("&&").next().unwrap_or(segment);
+
+    let tokens: Vec<&str> = segment.split_whitespace().collect();
+
+    // Collect non-option arguments
+    let mut args: Vec<&str> = Vec::new();
+    let mut skip_next = false;
+    for &tok in &tokens {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        // Flags that take a value: -t (target dir), -T, --target-directory
+        if tok == "-t" || tok == "--target-directory" {
+            skip_next = true;
+            continue;
+        }
+        if tok.starts_with('-') {
+            continue;
+        }
+        let cleaned = tok.trim_matches(|c| c == '"' || c == '\'');
+        if !cleaned.is_empty() {
+            args.push(cleaned);
+        }
+    }
+
+    // Destination is the last argument (need at least 2: source + dest)
+    if args.len() >= 2 {
+        return Some(args.last().unwrap().to_string());
+    }
+    None
 }
 
 /// Check if a path is a main checkout (not .worktrees/ or .claude-tmp/).
@@ -810,6 +988,202 @@ mod tests {
         assert!(
             matches!(r, GitResult::Block(_)),
             "defense-in-depth: git inside echo is still blocked"
+        );
+    }
+
+    // ---- Bypass vector detection tests ----
+
+    #[test]
+    fn test_sed_inplace_absolute_path() {
+        let paths = check_bash_write_paths("sed -i '' 's/foo/bar/' /usr/src/file.rs");
+        assert!(
+            paths.iter().any(|p| p == "/usr/src/file.rs"),
+            "sed -i with absolute path should be detected: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_sed_inplace_relative_path() {
+        let paths = check_bash_write_paths("sed -i '' '/pattern/d' hooks/src/gitcheck.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:hooks/src/gitcheck.rs"),
+            "sed -i with relative path should return rel: prefix: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_sed_inplace_macos_variant() {
+        let paths = check_bash_write_paths("sed -i '' 's/old/new/g' src/main.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/main.rs"),
+            "sed -i '' (macOS) should detect target: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_perl_inplace() {
+        let paths = check_bash_write_paths("perl -i -pe 's/foo/bar/' src/lib.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/lib.rs"),
+            "perl -i should detect target: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_ruby_inplace() {
+        let paths = check_bash_write_paths("ruby -i -pe 'gsub(/foo/,\"bar\")' config.yml");
+        assert!(
+            paths.iter().any(|p| p == "rel:config.yml"),
+            "ruby -i should detect target: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_cp_absolute_paths() {
+        let paths = check_bash_write_paths("cp /tmp/fixed.rs /home/user/src/file.rs");
+        assert!(
+            paths.iter().any(|p| p == "/home/user/src/file.rs"),
+            "cp with absolute dest should be detected: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_cp_relative_dest() {
+        let paths = check_bash_write_paths("cp /tmp/fixed.rs hooks/src/gitcheck.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:hooks/src/gitcheck.rs"),
+            "cp with relative dest should return rel: prefix: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_cp_with_flags() {
+        let paths = check_bash_write_paths("cp -f /tmp/fixed.rs hooks/src/gitcheck.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:hooks/src/gitcheck.rs"),
+            "cp -f should still detect dest: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_mv_relative_dest() {
+        let paths = check_bash_write_paths("mv /tmp/backup.rs src/lib.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/lib.rs"),
+            "mv with relative dest should return rel: prefix: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_install_dest() {
+        let paths = check_bash_write_paths("install -m 755 /tmp/binary /usr/local/bin/tool");
+        assert!(
+            paths.iter().any(|p| p == "/usr/local/bin/tool"),
+            "install should detect absolute dest: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_rsync_dest() {
+        let paths = check_bash_write_paths("rsync -av /tmp/src/ /home/user/dest/");
+        assert!(
+            paths.iter().any(|p| p == "/home/user/dest/"),
+            "rsync should detect absolute dest: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_dd_of_path() {
+        let paths = check_bash_write_paths("dd if=/dev/zero of=/tmp/output.img bs=1M count=10");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/output.img"),
+            "dd of= should detect target: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_dd_of_relative() {
+        let paths = check_bash_write_paths("dd if=/dev/zero of=output.bin bs=1M count=1");
+        assert!(
+            paths.iter().any(|p| p == "rel:output.bin"),
+            "dd of= with relative path should return rel: prefix: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_patch_target() {
+        let paths = check_bash_write_paths("patch -p1 src/main.rs < fix.patch");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/main.rs"),
+            "patch should detect target file: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bypass_chain_sed_then_cp() {
+        // The exact bypass from the incident: sed to temp, then cp back
+        let paths = check_bash_write_paths(
+            "sed '/pattern/d' hooks/src/gitcheck.rs > /tmp/fixed.rs && cp /tmp/fixed.rs hooks/src/gitcheck.rs",
+        );
+        assert!(
+            paths.iter().any(|p| p == "/tmp/fixed.rs"),
+            "redirect to /tmp should be detected: {:?}",
+            paths
+        );
+        assert!(
+            paths.iter().any(|p| p == "rel:hooks/src/gitcheck.rs"),
+            "cp to relative dest should be detected: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_safe_commands_no_false_positives() {
+        // These should NOT produce write paths
+        let safe_cmds = [
+            "cat src/main.rs",
+            "grep -r 'pattern' src/",
+            "ls -la",
+            "cargo build",
+            "cargo test",
+            "echo hello",
+            "sed 's/foo/bar/' src/main.rs", // sed without -i is read-only (to stdout)
+        ];
+        for cmd in &safe_cmds {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "safe command {:?} should produce no write paths, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_cp_single_arg_no_false_positive() {
+        // cp with only one non-option arg shouldn't produce a path (incomplete command)
+        let paths = check_bash_write_paths("cp --help");
+        let cp_paths: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+        assert!(
+            cp_paths.is_empty(),
+            "cp --help should not produce write paths: {:?}",
+            cp_paths
         );
     }
 }
