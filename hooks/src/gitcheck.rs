@@ -60,8 +60,34 @@ static RE_GIT_C: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)"#).unwrap());
 static RE_CD_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bcd\s+("[^"]+"|'[^']+'|\S+)"#).unwrap());
-static RE_GIT_CHECKOUT_SWITCH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bgit\s+(checkout|switch)\b").unwrap());
+// Bare mutating git detection (segment splitting + subcommand extraction)
+static RE_CMD_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"&&|\|\||[;&|]").unwrap());
+static RE_GIT_WORD_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bgit\b").unwrap());
+
+/// Mutating git subcommands that must target a worktree, not CWD.
+const MUTATING_GIT_SUBCMDS: &[&str] = &[
+    "add",
+    "am",
+    "apply",
+    "checkout",
+    "cherry-pick",
+    "clean",
+    "commit",
+    "merge",
+    "mv",
+    "pull",
+    "push",
+    "rebase",
+    "reset",
+    "restore",
+    "revert",
+    "rm",
+    "stash",
+    "switch",
+];
+
+/// Git global flags that consume a separate argument token.
+const GIT_FLAGS_WITH_ARG: &[&str] = &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
 
 // Bash write-path extraction regexes
 static RE_REDIRECT: LazyLock<Regex> =
@@ -237,13 +263,15 @@ pub fn check_worktree_enforcement(
         }
     }
 
-    // Block bare git checkout/switch with no path context
-    if !RE_GIT_C.is_match(cmd) && !RE_CD_PATH.is_match(cmd) && RE_GIT_CHECKOUT_SWITCH.is_match(cmd)
-    {
-        return Some(format!(
-            "BLOCKED: Bare git checkout/switch — worktrees are active. Use: git -C <repo>/.worktrees/{}/ checkout ...",
-            short_id
-        ));
+    // Block bare mutating git commands (no -C, no cd context).
+    // When worktrees are active, mutating git ops must target the worktree explicitly.
+    if !RE_CD_PATH.is_match(cmd) {
+        if let Some(subcmd) = find_bare_mutating_git(cmd) {
+            return Some(format!(
+                "BLOCKED: Bare 'git {subcmd}' runs in CWD (main checkout), not the worktree. \
+                 Use: git -C <repo>/.worktrees/{short_id}/ {subcmd} ..."
+            ));
+        }
     }
 
     None
@@ -406,6 +434,54 @@ pub fn is_repo_git_op(cmd: &str) -> bool {
 /// Check if a command is managing worktrees.
 pub fn is_worktree_management_op(cmd: &str) -> bool {
     cmd.contains("worktree")
+}
+
+/// Find a bare (no `-C`) mutating git subcommand in a (possibly compound) command.
+///
+/// Splits on shell separators (`&&`, `||`, `;`, `|`, `&`) and checks each segment.
+/// For each segment containing `git` without `-C`, extracts the subcommand and
+/// checks against [`MUTATING_GIT_SUBCMDS`].
+///
+/// Returns the subcommand name if a bare mutating invocation is found.
+fn find_bare_mutating_git(cmd: &str) -> Option<String> {
+    for segment in RE_CMD_SEP.split(cmd) {
+        let segment = segment.trim();
+        if !RE_GIT_WORD_BOUNDARY.is_match(segment) {
+            continue;
+        }
+        // Skip if this segment has -C (explicit working directory)
+        if segment.contains(" -C ") || segment.ends_with(" -C") {
+            continue;
+        }
+        if let Some(subcmd) = extract_git_subcommand(segment) {
+            if MUTATING_GIT_SUBCMDS.contains(&subcmd) {
+                return Some(subcmd.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Extract the git subcommand (first non-flag token after `git`).
+///
+/// Handles global flags like `--no-pager`, `-c key=value`, and flags with `=` values.
+fn extract_git_subcommand(segment: &str) -> Option<&str> {
+    let m = RE_GIT_WORD_BOUNDARY.find(segment)?;
+    let after_git = &segment[m.end()..];
+    let mut words = after_git.split_whitespace();
+    while let Some(word) = words.next() {
+        // Flags that consume the next token as their argument
+        if GIT_FLAGS_WITH_ARG.contains(&word) {
+            words.next(); // skip the argument
+            continue;
+        }
+        // Other flags (--flag, -f, --key=value)
+        if word.starts_with('-') {
+            continue;
+        }
+        return Some(word);
+    }
+    None
 }
 
 #[cfg(test)]
@@ -795,5 +871,166 @@ mod tests {
             matches!(r, GitResult::Block(_)),
             "defense-in-depth: git inside echo is still blocked"
         );
+    }
+
+    // ── Bare mutating git detection ──────────────────────────────────
+
+    #[test]
+    fn test_bare_add_commit_push_blocked() {
+        let cmd = "git add file.rs && git commit -m 'msg' && git push origin branch";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(reason.is_some(), "bare add+commit+push should be blocked");
+        let msg = reason.unwrap();
+        assert!(msg.contains("git add"), "should identify 'add': {msg}");
+    }
+
+    #[test]
+    fn test_bare_commit_amend_blocked() {
+        let cmd = "git add . && git commit --amend --no-edit && git push --force-with-lease origin fv/branch";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(reason.is_some(), "bare commit --amend should be blocked");
+    }
+
+    #[test]
+    fn test_bare_rebase_blocked() {
+        let reason = check_worktree_enforcement("git rebase origin/main", true, "abc12345");
+        assert!(reason.is_some(), "bare rebase should be blocked");
+    }
+
+    #[test]
+    fn test_bare_stash_blocked() {
+        let reason = check_worktree_enforcement("git stash pop", true, "abc12345");
+        assert!(reason.is_some(), "bare stash pop should be blocked");
+    }
+
+    #[test]
+    fn test_bare_merge_blocked() {
+        let reason = check_worktree_enforcement("git merge feature-branch", true, "abc12345");
+        assert!(reason.is_some(), "bare merge should be blocked");
+    }
+
+    #[test]
+    fn test_bare_reset_blocked() {
+        let reason = check_worktree_enforcement("git reset HEAD~1", true, "abc12345");
+        assert!(reason.is_some(), "bare reset should be blocked");
+    }
+
+    #[test]
+    fn test_bare_pull_blocked() {
+        let reason = check_worktree_enforcement("git pull origin main", true, "abc12345");
+        assert!(reason.is_some(), "bare pull should be blocked");
+    }
+
+    #[test]
+    fn test_bare_readonly_allowed() {
+        let allowed = [
+            "git status",
+            "git log --oneline -10",
+            "git diff HEAD",
+            "git branch -a",
+            "git fetch origin",
+            "git remote -v",
+            "git describe --tags",
+            "git rev-parse HEAD",
+        ];
+        for cmd in &allowed {
+            let reason = check_worktree_enforcement(cmd, true, "abc12345");
+            assert!(reason.is_none(), "read-only '{}' should be allowed", cmd);
+        }
+    }
+
+    #[test]
+    fn test_compound_with_c_and_bare_blocked() {
+        let cmd = "git -C /ws/repo/.worktrees/abc12345 fetch && git add .";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_some(),
+            "bare 'git add' after -C fetch should be blocked"
+        );
+    }
+
+    #[test]
+    fn test_git_with_c_not_flagged_as_bare() {
+        let cmd = "git -C /wt/path commit -m 'msg'";
+        let reason = find_bare_mutating_git(cmd);
+        assert!(
+            reason.is_none(),
+            "-C commit should not be flagged as bare: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_commit_message_no_false_positive() {
+        // "merge" in the commit message should NOT trigger — "commit" is the subcommand
+        let cmd = "git commit -m 'merge branch X into Y'";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(reason.is_some(), "bare commit should be blocked");
+        let msg = reason.unwrap();
+        assert!(
+            msg.contains("git commit"),
+            "should identify 'commit', not 'merge': {msg}"
+        );
+    }
+
+    #[test]
+    fn test_cd_to_worktree_allows_bare_git() {
+        let cmd = "cd /ws/repo/.worktrees/abc12345 && git add . && git commit -m 'msg'";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_none(),
+            "cd to worktree + bare git should be allowed, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_extract_git_subcommand_simple() {
+        assert_eq!(extract_git_subcommand("git add ."), Some("add"));
+        assert_eq!(
+            extract_git_subcommand("git commit -m 'msg'"),
+            Some("commit")
+        );
+        assert_eq!(extract_git_subcommand("git status"), Some("status"));
+    }
+
+    #[test]
+    fn test_extract_git_subcommand_with_flags() {
+        assert_eq!(extract_git_subcommand("git --no-pager log"), Some("log"));
+        assert_eq!(
+            extract_git_subcommand("git -c core.editor=vim commit"),
+            Some("commit")
+        );
+    }
+
+    #[test]
+    fn test_extract_git_subcommand_with_c_flag() {
+        // -C consumes next token; subcommand follows
+        assert_eq!(
+            extract_git_subcommand("git -C /some/path status"),
+            Some("status")
+        );
+    }
+
+    #[test]
+    fn test_find_bare_mutating_git_none_for_readonly() {
+        assert!(find_bare_mutating_git("git status").is_none());
+        assert!(find_bare_mutating_git("git log --oneline").is_none());
+        assert!(find_bare_mutating_git("git diff HEAD").is_none());
+        assert!(find_bare_mutating_git("git fetch origin").is_none());
+    }
+
+    #[test]
+    fn test_find_bare_mutating_git_detects_all_subcmds() {
+        for subcmd in MUTATING_GIT_SUBCMDS {
+            let cmd = format!("git {} something", subcmd);
+            let result = find_bare_mutating_git(&cmd);
+            assert_eq!(
+                result.as_deref(),
+                Some(*subcmd),
+                "should detect bare 'git {}'",
+                subcmd
+            );
+        }
     }
 }
