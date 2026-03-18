@@ -96,7 +96,7 @@ pub fn check_path_with_context(
         };
     }
 
-    let state_dir_prefix = config::state_dir().to_string_lossy().to_string();
+    let state_dir_prefix = format!("{}/", config::state_dir().to_string_lossy());
     let global_claude_prefix = format!("{}/.claude/", home_str);
 
     // Find which workspace (if any) contains this path.

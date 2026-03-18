@@ -73,6 +73,11 @@ fn test_state_dir() -> String {
         }
     }
     if let Some(sd) = read_config_key("state_dir") {
+        // Expand ~ just like config::state_dir() does
+        let home = std::env::var("HOME").expect("HOME not set");
+        if let Some(rest) = sd.strip_prefix("~/") {
+            return format!("{}/{}", home, rest);
+        }
         return sd;
     }
     if let Ok(xdg) = std::env::var("XDG_STATE_HOME") {
