@@ -84,7 +84,10 @@ static RE_RUBY_INPLACE: LazyLock<Regex> =
 // File copy/move commands
 static RE_CP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bcp\b").unwrap());
 static RE_MV: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bmv\b").unwrap());
-static RE_INSTALL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\binstall\b").unwrap());
+// Match standalone `install` utility only, not package managers (npm install, pip install, etc.).
+// Require `install` at the start of a command segment (after |, &&, ;, or line start).
+static RE_INSTALL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:^|\|{1,2}|&&|;\s*)\s*install\b").unwrap());
 static RE_RSYNC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\brsync\b").unwrap());
 static RE_DD_OF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bdd\b[^;|&]*\bof=([^\s;|&]+)").unwrap());
@@ -400,24 +403,26 @@ fn extract_last_file_arg(cmd: &str, tool: &str) -> Option<String> {
     // (not an option flag, not a quoted pattern)
     let tokens: Vec<&str> = segment.split_whitespace().collect();
     for &tok in tokens.iter().rev() {
+        // Check quote-bounded patterns on the original token BEFORE trimming
+        if tok.starts_with("'/") || tok.starts_with("\"/") {
+            continue;
+        }
+        if tok.contains("/d'") || tok.contains("/d\"") {
+            continue;
+        }
         let cleaned = tok.trim_matches(|c| c == '"' || c == '\'');
         // Skip option flags
         if cleaned.starts_with('-') {
             continue;
         }
-        // Skip empty strings and sed/awk patterns (contain /)
-        // but allow file paths that start with / or look like relative paths
         if cleaned.is_empty() {
             continue;
         }
-        // Skip sed address/substitution patterns like '/pattern/d' or 's/foo/bar/'
+        // Skip sed address/substitution patterns like /pattern/d or s/foo/bar/
         if cleaned.starts_with('/') && cleaned.ends_with('/') {
             continue;
         }
-        if cleaned.contains("/d'") || cleaned.contains("/d\"") {
-            continue;
-        }
-        if cleaned.starts_with("s/") || cleaned.starts_with("'/") || cleaned.starts_with("\"/") {
+        if cleaned.starts_with("s/") {
             continue;
         }
         // This looks like a file path
@@ -440,17 +445,21 @@ fn extract_copy_dest(cmd: &str, tool: &str) -> Option<String> {
 
     let tokens: Vec<&str> = segment.split_whitespace().collect();
 
-    // Collect non-option arguments
+    // Collect non-option arguments, tracking explicit -t destination
     let mut args: Vec<&str> = Vec::new();
-    let mut skip_next = false;
+    let mut explicit_dest: Option<&str> = None;
+    let mut capture_dest = false;
     for &tok in &tokens {
-        if skip_next {
-            skip_next = false;
+        if capture_dest {
+            capture_dest = false;
+            let cleaned = tok.trim_matches(|c| c == '"' || c == '\'');
+            explicit_dest = Some(cleaned);
             continue;
         }
-        // Flags that take a value: -t (target dir), -T, --target-directory
+        // Flags that take a value: -t (target dir), --target-directory
+        // The -t value IS the write destination
         if tok == "-t" || tok == "--target-directory" {
-            skip_next = true;
+            capture_dest = true;
             continue;
         }
         if tok.starts_with('-') {
@@ -462,7 +471,12 @@ fn extract_copy_dest(cmd: &str, tool: &str) -> Option<String> {
         }
     }
 
-    // Destination is the last argument (need at least 2: source + dest)
+    // If -t was used, that's the explicit destination
+    if let Some(dest) = explicit_dest {
+        return Some(dest.to_string());
+    }
+
+    // Otherwise, destination is the last argument (need at least 2: source + dest)
     if args.len() >= 2 {
         return Some(args.last().unwrap().to_string());
     }
@@ -1184,6 +1198,60 @@ mod tests {
             cp_paths.is_empty(),
             "cp --help should not produce write paths: {:?}",
             cp_paths
+        );
+    }
+
+    #[test]
+    fn test_cp_dash_t_captures_destination() {
+        // cp -t <dest> <src> — the -t value IS the write destination
+        let paths = check_bash_write_paths("cp -t /path/to/checkout/file.rs /tmp/replacement.rs");
+        assert!(
+            paths.iter().any(|p| p == "/path/to/checkout/file.rs"),
+            "cp -t should capture destination: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_cp_dash_t_relative() {
+        let paths = check_bash_write_paths("cp -t src/lib.rs /tmp/fixed.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/lib.rs"),
+            "cp -t with relative dest should return rel: prefix: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_install_no_false_positive_package_managers() {
+        // Package manager install commands should NOT produce write paths
+        let safe_cmds = [
+            "npm install express",
+            "pip install requests",
+            "apt-get install -y nginx libssl-dev",
+            "cargo install ripgrep",
+            "brew install jq",
+        ];
+        for cmd in &safe_cmds {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "package manager {:?} should not produce write paths, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_install_standalone_utility() {
+        // Standalone install utility should be detected
+        let paths = check_bash_write_paths("install -m 755 /tmp/bin /usr/local/bin/tool");
+        assert!(
+            paths.iter().any(|p| p == "/usr/local/bin/tool"),
+            "standalone install should detect dest: {:?}",
+            paths
         );
     }
 }
