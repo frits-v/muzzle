@@ -190,8 +190,7 @@ pub fn check_worktree_enforcement(
         return None;
     }
 
-    let workspace = crate::config::workspace();
-    let ws_str = workspace.to_string_lossy().to_string();
+    let workspaces = crate::config::workspaces();
 
     // Check git -C <path>
     if let Some(caps) = RE_GIT_C.captures(cmd) {
@@ -199,17 +198,20 @@ pub fn check_worktree_enforcement(
             let git_path = m
                 .as_str()
                 .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
-            if is_main_checkout_path(git_path, &ws_str) {
-                let repo = extract_repo_name(git_path, &ws_str);
-                let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
-                if !std::path::Path::new(&wt_dir).exists() {
-                    return Some(crate::worktree_missing_msg(&repo));
+            for ws in &workspaces {
+                let ws_str = ws.to_string_lossy().to_string();
+                if is_main_checkout_path(git_path, &ws_str) {
+                    let repo = extract_repo_name(git_path, &ws_str);
+                    let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
+                    if !std::path::Path::new(&wt_dir).exists() {
+                        return Some(crate::worktree_missing_msg(&repo));
+                    }
+                    return Some(format!(
+                        "BLOCKED: Git op on main checkout ({repo}). \
+                         Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
+                         Tip: run git -C <wt-path> fetch origin before creating new branches"
+                    ));
                 }
-                return Some(format!(
-                    "BLOCKED: Git op on main checkout ({repo}). \
-                     Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
-                     Tip: run git -C <wt-path> fetch origin before creating new branches"
-                ));
             }
         }
     }
@@ -220,17 +222,20 @@ pub fn check_worktree_enforcement(
             let cd_path = m
                 .as_str()
                 .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
-            if cmd.contains("git") && is_main_checkout_path(cd_path, &ws_str) {
-                let repo = extract_repo_name(cd_path, &ws_str);
-                let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
-                if !std::path::Path::new(&wt_dir).exists() {
-                    return Some(crate::worktree_missing_msg(&repo));
+            for ws in &workspaces {
+                let ws_str = ws.to_string_lossy().to_string();
+                if cmd.contains("git") && is_main_checkout_path(cd_path, &ws_str) {
+                    let repo = extract_repo_name(cd_path, &ws_str);
+                    let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
+                    if !std::path::Path::new(&wt_dir).exists() {
+                        return Some(crate::worktree_missing_msg(&repo));
+                    }
+                    return Some(format!(
+                        "BLOCKED: Git op on main checkout ({repo}). \
+                         Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
+                         Tip: run git -C <wt-path> fetch origin before creating new branches"
+                    ));
                 }
-                return Some(format!(
-                    "BLOCKED: Git op on main checkout ({repo}). \
-                     Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
-                     Tip: run git -C <wt-path> fetch origin before creating new branches"
-                ));
             }
         }
     }
@@ -324,27 +329,33 @@ pub fn extract_repo_from_git_op(cmd: &str) -> Option<String> {
         return None;
     }
 
-    let ws = crate::config::workspace();
-    let ws_str = ws.to_string_lossy().to_string();
+    let workspaces = crate::config::workspaces();
 
     // git -C <workspace-path>/<repo>
     if cmd.contains("-C") {
-        let pattern = format!(
-            r#"\bgit\b[^;|&]*-C\s+["']?({}/(\S+?))[/"'\s]"#,
-            regex::escape(&ws_str)
-        );
-        if let Ok(re) = Regex::new(&pattern) {
-            if let Some(caps) = re.captures(cmd) {
-                if let Some(m) = caps.get(1) {
-                    let full_path = m.as_str().trim_matches(|c| c == '"' || c == '\'');
-                    let name = extract_repo_name(full_path, &ws_str);
-                    if !name.is_empty() {
-                        return Some(name);
+        for ws in &workspaces {
+            let ws_str = ws.to_string_lossy().to_string();
+            let pattern = format!(
+                r#"\bgit\b[^;|&]*-C\s+["']?({}/(\S+?))[/"'\s]"#,
+                regex::escape(&ws_str)
+            );
+            if let Ok(re) = Regex::new(&pattern) {
+                if let Some(caps) = re.captures(cmd) {
+                    if let Some(m) = caps.get(1) {
+                        let full_path = m.as_str().trim_matches(|c| c == '"' || c == '\'');
+                        let name = extract_repo_name(full_path, &ws_str);
+                        if !name.is_empty() {
+                            return Some(name);
+                        }
                     }
                 }
             }
         }
         // Fallback: try the broader pattern for paths without trailing slash
+        let ws_str = workspaces
+            .first()
+            .map(|w| w.to_string_lossy().to_string())
+            .unwrap_or_default();
         let pattern2 = format!(r"\bgit\b[^;|&]*-C\s+\S*{}", regex::escape(&ws_str));
         if let Ok(re) = Regex::new(&pattern2) {
             if let Some(caps) = re.captures(cmd) {
@@ -367,16 +378,18 @@ pub fn extract_repo_from_git_op(cmd: &str) -> Option<String> {
 
     // cd <workspace-path>/<repo> && git
     if cmd.contains("cd") {
-        let pattern = format!(r"\bcd\s+\S*{}\S*\s*[;&|]+.*\bgit\b", regex::escape(&ws_str));
-        if let Ok(re) = Regex::new(&pattern) {
-            if re.is_match(cmd) {
-                // Extract the cd path
-                if let Some(caps) = RE_CD_PATH.captures(cmd) {
-                    if let Some(m) = caps.get(1) {
-                        let cd_path = m.as_str().trim_matches(|c| c == '"' || c == '\'');
-                        let name = extract_repo_name(cd_path, &ws_str);
-                        if !name.is_empty() {
-                            return Some(name);
+        for ws in &workspaces {
+            let ws_str = ws.to_string_lossy().to_string();
+            let pattern = format!(r"\bcd\s+\S*{}\S*\s*[;&|]+.*\bgit\b", regex::escape(&ws_str));
+            if let Ok(re) = Regex::new(&pattern) {
+                if re.is_match(cmd) {
+                    if let Some(caps) = RE_CD_PATH.captures(cmd) {
+                        if let Some(m) = caps.get(1) {
+                            let cd_path = m.as_str().trim_matches(|c| c == '"' || c == '\'');
+                            let name = extract_repo_name(cd_path, &ws_str);
+                            if !name.is_empty() {
+                                return Some(name);
+                            }
                         }
                     }
                 }

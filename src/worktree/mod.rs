@@ -52,6 +52,19 @@ pub struct CreateResult {
     pub error: String,
 }
 
+/// Resolve a repo name to a path by searching all configured workspaces.
+///
+/// Checks `<workspace>/<repo>` for each workspace; returns the first existing directory.
+fn resolve_repo_path(repo: &str) -> Option<std::path::PathBuf> {
+    for ws in config::workspaces() {
+        let candidate = ws.join(repo);
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Create worktrees for the session.
 ///
 /// If CLAUDE_WORKTREES is set, uses those specs.
@@ -88,7 +101,19 @@ fn create_from_env(sess: &State, env_specs: &str) -> CreateResult {
             None
         };
 
-        let repo_path = config::workspace().join(repo);
+        let repo_path = match resolve_repo_path(repo) {
+            Some(p) => p,
+            None => {
+                crate::log::emit_full(
+                    "WARN",
+                    "session-start",
+                    &format!("skipping {} — not found in any workspace", repo),
+                    None,
+                    None,
+                );
+                continue;
+            }
+        };
         if !git::is_git_repo(&repo_path) {
             crate::log::emit_full(
                 "WARN",
@@ -133,15 +158,20 @@ fn create_auto_sandbox(sess: &State) -> CreateResult {
         }
     };
 
-    let workspace = config::workspace();
+    let workspaces = config::workspaces();
     let mut check_dir = pwd.clone();
     let mut auto_repo: Option<String> = None;
+    let mut found_workspace: Option<std::path::PathBuf> = None;
 
-    while config::is_under(&check_dir, &workspace) && check_dir != workspace {
+    // Walk up from PWD to find a git repo within any configured workspace.
+    while workspaces.iter().any(|ws| config::is_under(&check_dir, ws))
+        && !workspaces.contains(&check_dir)
+    {
         if git::is_git_repo(&check_dir) {
             auto_repo = check_dir
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string());
+            found_workspace = config::workspace_for_path(&check_dir);
             break;
         }
         check_dir = match check_dir.parent() {
@@ -155,7 +185,9 @@ fn create_auto_sandbox(sess: &State) -> CreateResult {
         return result;
     };
 
-    let repo_path = workspace.join(&repo);
+    let repo_path = found_workspace
+        .unwrap_or_else(config::workspace)
+        .join(&repo);
     match create_single_worktree(sess, &repo, &repo_path, None) {
         Ok(entry) => result.entries.push(entry),
         Err(e) => {
@@ -273,7 +305,17 @@ fn create_single_worktree(
 /// `create_single_worktree()` with no branch (ephemeral `wt/<short-id>`).
 /// Returns the spec entry for the created worktree.
 pub fn ensure_for_repo(sess: &State, repo: &str) -> Result<SpecEntry, WorktreeError> {
-    let repo_path = config::workspace().join(repo);
+    let repo_path = resolve_repo_path(repo).ok_or_else(|| {
+        let searched: Vec<_> = config::workspaces()
+            .iter()
+            .map(|ws| ws.join(repo).display().to_string())
+            .collect();
+        WorktreeError::CreateFailed(format!(
+            "{} not found in any workspace. Searched: {}",
+            repo,
+            searched.join(", ")
+        ))
+    })?;
     if !git::is_git_repo(&repo_path) {
         return Err(WorktreeError::CreateFailed(format!(
             "{} is not a git repo at {}",

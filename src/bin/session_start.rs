@@ -33,9 +33,14 @@ fn main() {
 }
 
 fn run() {
-    // Skip when not running inside the configured workspace
-    if !config::is_in_workspace() {
+    // Skip when not running inside any configured workspace
+    if !config::is_in_any_workspace() {
         std::process::exit(0);
+    }
+
+    // Ensure state directory structure exists
+    if let Err(e) = config::ensure_state_subdirs() {
+        muzzle::log::error("session-start", &format!("state dir setup: {}", e));
     }
 
     // Read hook input from stdin
@@ -110,13 +115,13 @@ fn run() {
 fn handle_startup(sess: &mut State, timestamp: &str) {
     // Gzip leftover changelogs from crashed sessions (FR-CR-5)
     gzip_stale_files_excluding(
-        &config::workspace(),
-        &format!("{}*{}", config::CHANGELOG_PREFIX, config::CHANGELOG_SUFFIX),
+        &config::state_dir().join("changelogs"),
+        &format!("*{}", config::CHANGELOG_SUFFIX),
         &sess.id,
     );
     gzip_stale_files_excluding(
-        &config::workspace(),
-        &format!("{}*{}", config::TRACE_PREFIX, config::TRACE_SUFFIX),
+        &config::state_dir().join("traces"),
+        &format!("*{}", config::TRACE_SUFFIX),
         &sess.id,
     );
 
@@ -276,7 +281,8 @@ fn emit_context(text: &str) {
 fn update_symlink(session_id: &str) {
     let symlink = config::changelog_symlink();
     let _ = fs::remove_file(&symlink);
-    let target = format!(".claude-changelog-{}.md", session_id);
+    // Target is relative to symlink's parent (state_dir/)
+    let target = format!("changelogs/{}.md", session_id);
     let _ = std::os::unix::fs::symlink(&target, &symlink);
 }
 
@@ -411,7 +417,7 @@ fn crash_recovery(sess: &State, start: Instant) {
     // FR-CR-3: Clean stale temp dirs (7 days)
     if start.elapsed() < timeout {
         clean_stale_dirs(
-            &config::workspace().join(".claude-tmp"),
+            &config::state_dir().join("tmp"),
             config::STALE_TEMP_DIR_MAX_AGE_DAYS,
         );
     }
@@ -427,8 +433,8 @@ fn crash_recovery(sess: &State, start: Instant) {
     // FR-CR-2: Clean stale spec files (7 days)
     if start.elapsed() < timeout {
         clean_stale_glob(
-            &config::workspace(),
-            &format!("{}*{}", config::SPEC_FILE_PREFIX, config::SPEC_FILE_SUFFIX),
+            &config::state_dir().join("specs"),
+            &format!("*{}", config::SPEC_FILE_SUFFIX),
             config::STALE_SPEC_FILE_MAX_AGE_DAYS,
         );
     }
@@ -519,8 +525,13 @@ fn clean_stale_glob(dir: &Path, pattern: &str, max_age_days: u64) {
 }
 
 fn prune_orphan_worktrees(sess: &State) {
-    let workspace = config::workspace();
-    let Ok(entries) = fs::read_dir(&workspace) else {
+    for ws in config::workspaces() {
+        prune_orphan_worktrees_in(sess, &ws);
+    }
+}
+
+fn prune_orphan_worktrees_in(sess: &State, workspace: &Path) {
+    let Ok(entries) = fs::read_dir(workspace) else {
         return;
     };
 

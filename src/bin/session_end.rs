@@ -25,8 +25,8 @@ fn main() {
 }
 
 fn run() {
-    // Skip when not running inside the configured workspace
-    if !config::is_in_workspace() {
+    // Skip when not running inside any configured workspace
+    if !config::is_in_any_workspace() {
         std::process::exit(0);
     }
 
@@ -136,20 +136,21 @@ fn clean_pid_markers() {
 }
 
 fn clean_empty_worktree_dirs() {
-    let workspace = config::workspace();
-    let Ok(entries) = fs::read_dir(&workspace) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() {
+    for ws in config::workspaces() {
+        let Ok(entries) = fs::read_dir(&ws) else {
             continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(ft) = entry.file_type() else { continue };
+            if !ft.is_dir() {
+                continue;
+            }
+            let repo_path = entry.path();
+            if !repo_path.join(".git").exists() {
+                continue;
+            }
+            worktree::clean_empty_worktree_dirs(&repo_path);
         }
-        let repo_path = entry.path();
-        if !repo_path.join(".git").exists() {
-            continue;
-        }
-        worktree::clean_empty_worktree_dirs(&repo_path);
     }
 }
 

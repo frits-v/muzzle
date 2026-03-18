@@ -39,7 +39,7 @@ pub fn check_path_with_context(
     ctx: ToolContext,
 ) -> PathDecision {
     let home = config::home();
-    let workspace = config::workspace();
+    let workspaces = config::workspaces();
     let home_str = home.to_string_lossy().to_string();
 
     // Expand ~ to home
@@ -96,9 +96,21 @@ pub fn check_path_with_context(
         };
     }
 
-    let ws_str = workspace.to_string_lossy().to_string();
-    let claude_tmp_prefix = format!("{}/.claude-tmp/", ws_str);
+    let state_dir_prefix = format!("{}/", config::state_dir().to_string_lossy());
     let global_claude_prefix = format!("{}/.claude/", home_str);
+
+    // Find which workspace (if any) contains this path.
+    let matching_ws = workspaces
+        .iter()
+        .find(|ws| config::is_under(Path::new(&resolved), ws));
+    let ws_str_owned;
+    let ws_str = match &matching_ws {
+        Some(ws) => {
+            ws_str_owned = ws.to_string_lossy().to_string();
+            &ws_str_owned
+        }
+        None => "",
+    };
 
     // Worktree enforcement (FR-WE-1 through FR-WE-5)
     if let Some(sess) = sess {
@@ -136,13 +148,13 @@ pub fn check_path_with_context(
                     return PathDecision::Allow;
                 }
 
-                // FR-WE-4: Allow writes to config paths
-                if is_config_path(&resolved, &ws_str) {
+                // FR-WE-4: Allow writes to config paths (in matching workspace)
+                if !ws_str.is_empty() && is_config_path(&resolved, ws_str) {
                     return PathDecision::Allow;
                 }
 
-                // FR-WE-5: Allow writes to session temp
-                if resolved.starts_with(&claude_tmp_prefix) {
+                // FR-WE-5: Allow writes to state directory (changelogs, specs, tmp)
+                if resolved.starts_with(&state_dir_prefix) {
                     return PathDecision::Allow;
                 }
 
@@ -152,13 +164,13 @@ pub fn check_path_with_context(
                 }
 
                 // FR-WE-1: Block writes to main checkout — redirect or WORKTREE_MISSING
-                if config::is_under(Path::new(&resolved), &workspace) {
-                    let repo = extract_repo(&resolved, &ws_str);
+                if matching_ws.is_some() && !ws_str.is_empty() {
+                    let repo = extract_repo(&resolved, ws_str);
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, sess.short_id);
                     if !repo.is_empty() && !Path::new(&wt_dir).exists() {
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
-                    let rel = extract_rel_path(&resolved, &repo, &ws_str);
+                    let rel = extract_rel_path(&resolved, &repo, ws_str);
                     return PathDecision::Deny(format!(
                         "REDIRECT: Use worktree path instead: {}/{}/.worktrees/{}/{}",
                         ws_str, repo, sess.short_id, rel
@@ -167,30 +179,21 @@ pub fn check_path_with_context(
             } else {
                 // FR-WE-2: Session exists but NO worktrees (creation failed) — DENY all repo writes
                 // AR-5: No legacy direct-edit mode
-                if config::is_under(Path::new(&resolved), &workspace) {
+                if matching_ws.is_some() && !ws_str.is_empty() {
                     // Allow writes to existing worktree paths from other sessions
                     if resolved.contains("/.worktrees/") {
                         return PathDecision::Allow;
                     }
                     // Allow config paths even when worktrees failed
-                    if is_config_path(&resolved, &ws_str) {
+                    if is_config_path(&resolved, ws_str) {
                         return PathDecision::Allow;
                     }
-                    // Allow .claude-tmp/
-                    if resolved.starts_with(&claude_tmp_prefix) {
+                    // Allow state directory (changelogs, specs, tmp)
+                    if resolved.starts_with(&state_dir_prefix) {
                         return PathDecision::Allow;
-                    }
-                    // Allow changelog/trace files at workspace root
-                    if let Some(base) = Path::new(&resolved).file_name().and_then(|n| n.to_str()) {
-                        if base.starts_with(".claude-changelog")
-                            || base.starts_with(".claude-trace")
-                            || base.starts_with(".claude-worktrees")
-                        {
-                            return PathDecision::Allow;
-                        }
                     }
                     // FR-WE-2: Return WORKTREE_MISSING with repo name for lazy creation
-                    let repo = extract_repo(&resolved, &ws_str);
+                    let repo = extract_repo(&resolved, ws_str);
                     if !repo.is_empty() {
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
@@ -205,8 +208,8 @@ pub fn check_path_with_context(
                 }
             }
         } else {
-            // No session context — allow workspace and config
-            if config::is_under(Path::new(&resolved), &workspace) {
+            // No session context — allow any workspace, state dir, and config
+            if matching_ws.is_some() || resolved.starts_with(&state_dir_prefix) {
                 return PathDecision::Allow;
             }
             if resolved.starts_with(&global_claude_prefix) {
@@ -214,8 +217,8 @@ pub fn check_path_with_context(
             }
         }
     } else {
-        // No session state at all — allow workspace and config
-        if config::is_under(Path::new(&resolved), &workspace) {
+        // No session state at all — allow any workspace, state dir, and config
+        if matching_ws.is_some() || resolved.starts_with(&state_dir_prefix) {
             return PathDecision::Allow;
         }
         if resolved.starts_with(&global_claude_prefix) {
@@ -721,8 +724,8 @@ mod tests {
     fn test_session_temp_always_allowed() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_with_worktrees();
-        let ws = config::workspace();
-        let p = format!("{}/.claude-tmp/abc12345-test/output.txt", ws.display());
+        let sd = config::state_dir();
+        let p = format!("{}/tmp/abc12345-test/output.txt", sd.display());
         let result = check_path(&p, Some(&sess));
         assert!(
             matches!(result, PathDecision::Allow),
@@ -808,11 +811,12 @@ mod tests {
         let sess = sess_no_worktrees();
         let ws = config::workspace();
         let ws_str = ws.to_string_lossy();
+        let sd = config::state_dir();
         let paths = [
             format!("{}/.claude/hooks-v2/test.go", ws_str),
             format!("{}/.agents/test.md", ws_str),
             format!("{}/CLAUDE.md", ws_str),
-            format!("{}/.claude-tmp/abc12345-test/output.txt", ws_str),
+            format!("{}/tmp/abc12345-test/output.txt", sd.display()),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
@@ -1018,12 +1022,11 @@ mod tests {
     fn test_changelog_files_allowed_no_worktree() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let sess = sess_no_worktrees();
-        let ws = config::workspace();
-        let ws_str = ws.to_string_lossy();
+        let sd = config::state_dir();
         let paths = [
-            format!("{}/.claude-changelog-abc12345-test.md", ws_str),
-            format!("{}/.claude-trace-abc12345-test.md", ws_str),
-            format!("{}/.claude-worktrees-abc12345-test.env", ws_str),
+            format!("{}/changelogs/abc12345-test.md", sd.display()),
+            format!("{}/traces/abc12345-test.md", sd.display()),
+            format!("{}/specs/abc12345-test.env", sd.display()),
         ];
         for p in &paths {
             let result = check_path(p, Some(&sess));
