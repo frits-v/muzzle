@@ -265,13 +265,12 @@ pub fn check_worktree_enforcement(
 
     // Block bare mutating git commands (no -C, no cd context).
     // When worktrees are active, mutating git ops must target the worktree explicitly.
-    if !RE_CD_PATH.is_match(cmd) {
-        if let Some(subcmd) = find_bare_mutating_git(cmd) {
-            return Some(format!(
-                "BLOCKED: Bare 'git {subcmd}' runs in CWD (main checkout), not the worktree. \
-                 Use: git -C <repo>/.worktrees/{short_id}/ {subcmd} ..."
-            ));
-        }
+    // Per-segment analysis: each command segment is checked independently for -C and cd.
+    if let Some(subcmd) = find_bare_mutating_git(cmd) {
+        return Some(format!(
+            "BLOCKED: Bare 'git {subcmd}' runs in CWD (main checkout), not the worktree. \
+             Use: git -C <repo>/.worktrees/{short_id}/ {subcmd} ..."
+        ));
     }
 
     None
@@ -436,11 +435,12 @@ pub fn is_worktree_management_op(cmd: &str) -> bool {
     cmd.contains("worktree")
 }
 
-/// Find a bare (no `-C`) mutating git subcommand in a (possibly compound) command.
+/// Find a bare (no `-C`, no `cd` context) mutating git subcommand in a
+/// (possibly compound) command.
 ///
-/// Splits on shell separators (`&&`, `||`, `;`, `|`, `&`) and checks each segment.
-/// For each segment containing `git` without `-C`, extracts the subcommand and
-/// checks against [`MUTATING_GIT_SUBCMDS`].
+/// Splits on shell separators (`&&`, `||`, `;`, `|`, `&`) and checks each
+/// segment independently. A segment is "bare" when the git invocation has
+/// no `-C` flag AND no preceding `cd` in the same segment.
 ///
 /// Returns the subcommand name if a bare mutating invocation is found.
 fn find_bare_mutating_git(cmd: &str) -> Option<String> {
@@ -449,29 +449,48 @@ fn find_bare_mutating_git(cmd: &str) -> Option<String> {
         if !RE_GIT_WORD_BOUNDARY.is_match(segment) {
             continue;
         }
-        // Skip if this segment has -C (explicit working directory)
-        if segment.contains(" -C ") || segment.ends_with(" -C") {
+        // Skip if this segment has a `cd` before the git invocation —
+        // cd sets the working directory so the git command is not bare.
+        if RE_CD_PATH.is_match(segment) {
             continue;
         }
-        if let Some(subcmd) = extract_git_subcommand(segment) {
-            if MUTATING_GIT_SUBCMDS.contains(&subcmd) {
-                return Some(subcmd.to_string());
+        if let Some(result) = extract_git_subcommand(segment) {
+            // Skip if git had -C flag (explicit working directory)
+            if result.had_dir_flag {
+                continue;
+            }
+            if MUTATING_GIT_SUBCMDS.contains(&result.subcommand) {
+                return Some(result.subcommand.to_string());
             }
         }
     }
     None
 }
 
+/// Result of extracting a git subcommand from a command segment.
+struct GitSubcommand<'a> {
+    /// The subcommand name (e.g. "add", "commit", "status").
+    subcommand: &'a str,
+    /// True if `-C` (or another dir-setting flag) was seen before the subcommand.
+    had_dir_flag: bool,
+}
+
 /// Extract the git subcommand (first non-flag token after `git`).
 ///
-/// Handles global flags like `--no-pager`, `-c key=value`, and flags with `=` values.
-fn extract_git_subcommand(segment: &str) -> Option<&str> {
+/// Walks tokens after `git`, consuming flag arguments from [`GIT_FLAGS_WITH_ARG`].
+/// Tracks whether `-C` was encountered to distinguish `git -C /path add`
+/// (not bare) from `git add` (bare).
+fn extract_git_subcommand(segment: &str) -> Option<GitSubcommand<'_>> {
     let m = RE_GIT_WORD_BOUNDARY.find(segment)?;
     let after_git = &segment[m.end()..];
     let mut words = after_git.split_whitespace();
+    let mut had_dir_flag = false;
     while let Some(word) = words.next() {
         // Flags that consume the next token as their argument
         if GIT_FLAGS_WITH_ARG.contains(&word) {
+            if word == "-C" {
+                had_dir_flag = true;
+            }
             words.next(); // skip the argument
             continue;
         }
@@ -479,7 +498,10 @@ fn extract_git_subcommand(segment: &str) -> Option<&str> {
         if word.starts_with('-') {
             continue;
         }
-        return Some(word);
+        return Some(GitSubcommand {
+            subcommand: word,
+            had_dir_flag,
+        });
     }
     None
 }
@@ -975,40 +997,77 @@ mod tests {
 
     #[test]
     fn test_cd_to_worktree_allows_bare_git() {
+        // cd to worktree in the SAME segment as git → allowed
         let cmd = "cd /ws/repo/.worktrees/abc12345 && git add . && git commit -m 'msg'";
         let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        // The cd is in segment 1, but git add/commit are in segments 2 and 3.
+        // Per-segment: segments 2 and 3 have no cd → bare → blocked.
+        // This is CORRECT: cd in a previous segment doesn't set CWD for later segments
+        // in the permissions hook (which sees the full command pre-execution).
+        // The SHELL would change dirs, but the hook can't know that.
+        // Users should use `git -C <wt-path>` instead of `cd && git`.
         assert!(
-            reason.is_none(),
-            "cd to worktree + bare git should be allowed, got: {:?}",
-            reason
+            reason.is_some(),
+            "cd in separate segment from git should still block bare git"
+        );
+    }
+
+    #[test]
+    fn test_cd_same_segment_allows_git() {
+        // cd and git in the SAME shell segment (not separated by &&)
+        // This is unusual but the per-segment cd check handles it
+        let cmd = "cd /ws/repo/.worktrees/abc12345; git add .";
+        // `;` splits into two segments, so git add is still bare → blocked
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(reason.is_some(), "cd in different segment should block");
+    }
+
+    #[test]
+    fn test_cd_tmp_does_not_bypass_bare_check() {
+        // Regression: cd /tmp should NOT bypass the bare git check
+        let cmd = "cd /tmp && git add /ws/main-repo/important.rs";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(reason.is_some(), "cd /tmp should not bypass bare git check");
+    }
+
+    #[test]
+    fn test_ssh_c_flag_does_not_bypass() {
+        // Regression: -C inside a quoted SSH command should not skip detection
+        let cmd = "env GIT_SSH_COMMAND=\"ssh -C\" git add .";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_some(),
+            "SSH -C in quotes should not bypass bare git check"
         );
     }
 
     #[test]
     fn test_extract_git_subcommand_simple() {
-        assert_eq!(extract_git_subcommand("git add ."), Some("add"));
-        assert_eq!(
-            extract_git_subcommand("git commit -m 'msg'"),
-            Some("commit")
-        );
-        assert_eq!(extract_git_subcommand("git status"), Some("status"));
+        fn subcmd(s: &str) -> Option<&str> {
+            extract_git_subcommand(s).map(|r| r.subcommand)
+        }
+        assert_eq!(subcmd("git add ."), Some("add"));
+        assert_eq!(subcmd("git commit -m 'msg'"), Some("commit"));
+        assert_eq!(subcmd("git status"), Some("status"));
     }
 
     #[test]
     fn test_extract_git_subcommand_with_flags() {
-        assert_eq!(extract_git_subcommand("git --no-pager log"), Some("log"));
-        assert_eq!(
-            extract_git_subcommand("git -c core.editor=vim commit"),
-            Some("commit")
-        );
+        fn subcmd(s: &str) -> Option<&str> {
+            extract_git_subcommand(s).map(|r| r.subcommand)
+        }
+        assert_eq!(subcmd("git --no-pager log"), Some("log"));
+        assert_eq!(subcmd("git -c core.editor=vim commit"), Some("commit"));
     }
 
     #[test]
     fn test_extract_git_subcommand_with_c_flag() {
-        // -C consumes next token; subcommand follows
-        assert_eq!(
-            extract_git_subcommand("git -C /some/path status"),
-            Some("status")
+        // -C consumes next token; subcommand follows; had_dir_flag is set
+        let result = extract_git_subcommand("git -C /some/path status");
+        assert_eq!(result.as_ref().map(|r| r.subcommand), Some("status"));
+        assert!(
+            result.as_ref().map(|r| r.had_dir_flag).unwrap_or(false),
+            "-C should set had_dir_flag"
         );
     }
 
