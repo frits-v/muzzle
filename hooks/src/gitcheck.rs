@@ -61,7 +61,8 @@ static RE_GIT_C: LazyLock<Regex> =
 static RE_CD_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bcd\s+("[^"]+"|'[^']+'|\S+)"#).unwrap());
 // Bare mutating git detection (segment splitting + subcommand extraction)
-static RE_CMD_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"&&|\|\||[;&|]").unwrap());
+// Matches &&, ||, then single ;, |, or & (background). || before [;|&] so double-pipe isn't split.
+static RE_CMD_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"&&|\|\||[;|&]").unwrap());
 static RE_GIT_WORD_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bgit\b").unwrap());
 
 /// Mutating git subcommands that must target a worktree, not CWD.
