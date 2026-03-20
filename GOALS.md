@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 194 tests (166 unit + 5 doc + 13 integration + 10 proptest). Do not regress.
+Current: 220 tests (166 hooks unit + 5 doc + 13 hooks integration + 10 proptest + 22 memory unit + 4 memory integration). Do not regress.
 
 **Steer:** increase
 
@@ -203,6 +203,21 @@ Not actionable (time/structural):
 
 **Steer:** increase
 
+### 20. muzzle-memory v0.1 quality and coverage
+
+SQLite + FTS5 memory crate shipped in PR #19. Track deferred review findings
+and ensure the memory crate meets the same quality bar as hooks.
+
+Deferred items:
+- [ ] `stats()` counts empty sessions without observations (#20)
+- [ ] Add ONNX vector embeddings behind `semantic` feature flag (v0.2)
+- [ ] Wire SessionStart inject + SessionEnd capture hooks into settings.json
+- [ ] Import existing MEMORY.md entries as observations before switching to auto-gen
+
+Current: 26 memory tests (22 unit + 4 integration). Binary: 1.4MB.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
@@ -212,7 +227,7 @@ Not actionable (time/structural):
 | cargo-clippy    | `cargo clippy --all-targets -- -D warnings`      | 5      | No clippy warnings                |
 | cargo-fmt       | `cargo fmt -- --check`                           | 3      | Code formatted per rustfmt.toml   |
 | integration     | `cargo build && cargo test --test integration`   | 5      | Integration tests pass            |
-| five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
+| six-binaries    | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree && test -f target/release/memory` | 5 | All 6 binaries produced |
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
 | claude-md-valid | `cargo test --test claude_md`                            | 3      | CLAUDE.md matches codebase      |

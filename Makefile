@@ -5,27 +5,27 @@ all: check test build
 
 # Development build (fast, with debug info)
 build:
-	cargo build
+	cargo build --workspace
 
 # Run all tests
 test: test-unit
 
 # Unit tests only
 test-unit:
-	cargo test
+	cargo test --workspace
 
 # Integration tests (requires git repos in /tmp)
 test-integration:
-	cargo test --test integration
+	cargo test --workspace --test integration
 
 # Release build (optimized, stripped)
 release:
-	cargo build --release
+	cargo build --workspace --release
 
 # Install release binaries to bin/
 install: release
 	@mkdir -p bin
-	@for b in session-start permissions changelog session-end ensure-worktree; do \
+	@for b in session-start permissions changelog session-end ensure-worktree memory; do \
 		cp target/release/$$b bin/$$b; \
 		echo "  installed bin/$$b"; \
 	done
@@ -35,28 +35,31 @@ install: release
 DEPLOY_TARGET ?= $(HOME)/.local/share/muzzle
 
 deploy: release
-	@if [ -n "$$(git status --porcelain -- src/ Cargo.toml Cargo.lock Makefile)" ]; then \
+	@if [ -n "$$(git status --porcelain -- hooks/ memory/ Cargo.toml Cargo.lock Makefile)" ]; then \
 		echo "ERROR: Uncommitted changes in tracked build files."; \
 		echo "Commit or stash before deploying."; \
-		git status --short -- src/ Cargo.toml Cargo.lock Makefile; \
+		git status --short -- hooks/ memory/ Cargo.toml Cargo.lock Makefile; \
 		exit 1; \
 	fi
 	@echo "Deploying to $(DEPLOY_TARGET)/"
-	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/src
+	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/hooks/src $(DEPLOY_TARGET)/memory/src
 	@# Binaries
-	@for b in session-start permissions changelog session-end ensure-worktree; do \
+	@for b in session-start permissions changelog session-end ensure-worktree memory; do \
 		cp target/release/$$b $(DEPLOY_TARGET)/bin/$$b; \
 		echo "  bin/$$b"; \
 	done
 	@# Source + build files (for future builds in-place)
 	@rsync -a --delete --exclude='target/' --exclude='.git/' --exclude='.agents/' \
-		src/ $(DEPLOY_TARGET)/src/
+		hooks/src/ $(DEPLOY_TARGET)/hooks/src/
+	@rsync -a --delete memory/src/ $(DEPLOY_TARGET)/memory/src/
 	@cp Cargo.toml Cargo.lock $(DEPLOY_TARGET)/ 2>/dev/null || cp Cargo.toml $(DEPLOY_TARGET)/
+	@cp hooks/Cargo.toml $(DEPLOY_TARGET)/hooks/
+	@cp memory/Cargo.toml $(DEPLOY_TARGET)/memory/
 	@echo "Deployed to $(DEPLOY_TARGET)/"
 
 # Lint Rust
 lint:
-	cargo clippy --all-targets -- -D warnings
+	cargo clippy --workspace --all-targets -- -D warnings
 
 # Lint shell scripts (shellcheck + shfmt)
 lint-sh:
@@ -73,7 +76,7 @@ fmt-fix:
 
 # Type check without building
 check:
-	cargo check
+	cargo check --workspace
 
 # Clean build artifacts
 clean:
@@ -84,10 +87,10 @@ sizes: release
 	@echo "Binary sizes:"
 	@ls -lh target/release/session-start target/release/permissions \
 		target/release/changelog target/release/session-end \
-		target/release/ensure-worktree 2>/dev/null | \
+		target/release/ensure-worktree target/release/memory 2>/dev/null | \
 		awk '{print "  " $$NF ": " $$5}'
 
 # Run a single test by name
 test-one:
 	@test -n "$(NAME)" || (echo "Usage: make test-one NAME=test_name" && exit 1)
-	cargo test $(NAME) -- --nocapture
+	cargo test --workspace $(NAME) -- --nocapture

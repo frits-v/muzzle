@@ -1,0 +1,15 @@
+[package]
+name = "muzzle-memory"
+version = "0.1.0"
+edition = "2021"
+description = "Persistent cross-project memory for AI coding agents"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[[bin]]
+name = "memory"
+path = "src/main.rs"
