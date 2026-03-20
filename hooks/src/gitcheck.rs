@@ -1,6 +1,6 @@
 //! Git safety checks for Bash commands.
 //!
-//! FR-GS-1 through FR-GS-8: All 8 git safety patterns.
+//! FR-GS-1 through FR-GS-9: All 9 git safety patterns.
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -23,7 +23,7 @@ pub struct AskResult {
     pub reason: String,
 }
 
-// Pre-compiled regexes for the 8 git safety patterns.
+// Pre-compiled regexes for the 9 git safety patterns.
 static RE_GIT_PUSH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bgit\b.*\bpush\b").unwrap());
 static RE_FORCE_FLAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\s--force(\s|$)|\s-f(\s|$))").unwrap());
@@ -52,6 +52,15 @@ static RE_GH_PR_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+pr\s+merge\b").unwrap());
 static RE_GH_API_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+api\b.*(/pulls/[0-9]+/merge|/merge)").unwrap());
+static RE_GH_API_COMMIT_PATH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs))").unwrap()
+});
+static RE_GH_API_WRITE_METHOD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(-X[=\s]*(PUT|POST|PATCH|DELETE)|--method[=\s]+(PUT|POST|PATCH|DELETE))").unwrap()
+});
+static RE_GH_API_WRITE_BODY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\s(-f|--field|-F|--raw-field|-d|--data|--input)[=\s]").unwrap()
+});
 
 // Worktree enforcement regexes
 static RE_GIT_WORKTREE: LazyLock<Regex> =
@@ -71,7 +80,7 @@ static RE_TEE: LazyLock<Regex> =
 static RE_GIT_C_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|(\S+))"#).unwrap());
 
-/// Run all 8 git safety checks against a Bash command.
+/// Run all 9 git safety checks against a Bash command.
 pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-1: Force push without --force-with-lease
     if RE_GIT_PUSH.is_match(cmd)
@@ -140,6 +149,15 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_HARD_RESET.is_match(cmd) {
         return GitResult::Block(
             "BLOCKED: git reset --hard origin/main|master discards all local work. Use: git stash or git reset --soft".into(),
+        );
+    }
+
+    // FR-GS-9: gh api calls that create server-side commits (bypass signing)
+    if RE_GH_API_COMMIT_PATH.is_match(cmd)
+        && (RE_GH_API_WRITE_METHOD.is_match(cmd) || RE_GH_API_WRITE_BODY.is_match(cmd))
+    {
+        return GitResult::Block(
+            "BLOCKED: gh api to commit-creating endpoint bypasses commit signing. Use local git instead.".into(),
         );
     }
 
@@ -782,6 +800,62 @@ mod tests {
     fn test_non_git_commands_not_blocked() {
         let safe = ["ls -la", "cargo build", "cat file.txt", "make test"];
         for cmd in &safe {
+            let r = check_git_safety(cmd);
+            assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
+        }
+    }
+
+    // FR-GS-9: gh api server-side commit endpoints
+    #[test]
+    fn test_gh_api_commit_endpoints_blocked() {
+        let blocked = [
+            "gh api repos/owner/repo/contents/README.md -X PUT -f message=update",
+            "gh api repos/owner/repo/git/commits -X POST",
+            "gh api repos/owner/repo/git/trees -X POST",
+            "gh api repos/owner/repo/git/refs -X POST",
+            "gh api repos/owner/repo/git/blobs -X POST",
+            // Method flag before path
+            "gh api -X POST repos/owner/repo/git/commits -f tree=abc123",
+            "gh api --method POST repos/owner/repo/git/commits",
+            "gh api --method PUT repos/owner/repo/contents/file.txt -f message=update",
+            // Equals-delimited method flag
+            "gh api --method=POST repos/owner/repo/git/commits -f tree=abc123",
+            "gh api --method=PUT repos/owner/repo/contents/file.txt -f content=...",
+            // Short flag concatenated (no space)
+            "gh api repos/owner/repo/git/commits -XPOST -f tree=abc123",
+            "gh api repos/owner/repo/contents/file.txt -XPUT -f content=...",
+            // Implicit POST via body fields (no -X/--method)
+            "gh api repos/owner/repo/contents/file.txt -f message=create -f content=abc",
+            "gh api repos/owner/repo/git/commits -f message=bypass -f tree=abc123",
+            // Equals-delimited body flags (implicit POST)
+            r#"gh api repos/owner/repo/git/commits --data='{"message":"bypass","tree":"abc123"}'"#,
+            "gh api repos/owner/repo/contents/file.txt --field=message=create --field=content=aGVsbG8=",
+            "gh api repos/owner/repo/git/commits --input=payload.json",
+        ];
+        for cmd in &blocked {
+            let r = check_git_safety(cmd);
+            assert!(
+                matches!(r, GitResult::Block(_)),
+                "expected BLOCK for {:?}",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_gh_api_read_endpoints_not_blocked() {
+        let allowed = [
+            "gh api repos/owner/repo/pulls/123",
+            "gh api repos/owner/repo/issues",
+            "gh api repos/owner/repo/commits",
+            "gh api repos/owner/repo/contents/README.md",
+            "gh api repos/owner/repo/git/refs",
+            "gh api repos/owner/repo/git/trees/abc123",
+            "gh api repos/owner/repo/git/blobs/abc123",
+            "gh api repos/owner/repo/git/commits/abc123",
+            "gh pr list",
+        ];
+        for cmd in &allowed {
             let r = check_git_safety(cmd);
             assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
         }

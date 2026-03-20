@@ -20,7 +20,7 @@ src/
   config.rs           # Constants, path helpers (workspaces + XDG state_dir)
   session.rs          # Session ID resolution via PPID walk + spec file I/O
   sandbox.rs          # Path sandboxing (7 rules + worktree enforcement)
-  gitcheck.rs         # 8 git safety regex patterns + worktree enforcement
+  gitcheck.rs         # 9 git safety regex patterns + worktree enforcement
   output.rs           # JSON response formatting for PreToolUse
   changelog.rs        # Audit log formatting + read-only detection
   log.rs              # Structured JSON logging to stderr
@@ -177,7 +177,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-219 tests (166 unit + 5 doc + 13 integration + 10 proptest + 25 memory) plus 4 fuzz targets.
+241 tests (187 hooks unit + 22 memory unit + 5 claude_md + 13 hooks integration + 4 memory integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:

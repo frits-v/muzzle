@@ -258,7 +258,7 @@ src/
   config.rs           # Workspace resolution, path constants
   session.rs          # Session ID via PPID walk, spec file I/O (flock)
   sandbox.rs          # Path sandboxing (7 rules + dot-dot normalization)
-  gitcheck.rs         # 8 git safety regex patterns + repo extraction
+  gitcheck.rs         # 9 git safety regex patterns + repo extraction
   output.rs           # JSON response formatting for PreToolUse
   changelog.rs        # Audit log formatting + read-only detection
   log.rs              # Structured JSON logging to stderr
