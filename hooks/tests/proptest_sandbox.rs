@@ -87,14 +87,11 @@ proptest! {
     fn prop_tmp_paths_bash_allowed(suffix in "[a-zA-Z0-9_]{1,30}") {
         let path = format!("/tmp/{}", suffix);
         let result = sandbox::check_path_with_context(&path, None, ToolContext::Bash);
-        match result {
-            PathDecision::Allow => {} // expected for Bash writing to /tmp
-            PathDecision::Ask(_) => {} // also acceptable (FileTool context asks)
-            PathDecision::Deny(msg) => panic!(
-                "/tmp path '{}' via Bash should not be Deny: {}",
-                path, msg
-            ),
-        }
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "/tmp path '{}' via Bash should be Allow, got {:?}",
+            path, result
+        );
     }
 }
 
