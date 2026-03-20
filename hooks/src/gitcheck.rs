@@ -53,7 +53,10 @@ static RE_GH_PR_MERGE: LazyLock<Regex> =
 static RE_GH_API_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+api\b.*(/pulls/[0-9]+/merge|/merge)").unwrap());
 static RE_GH_API_COMMIT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs))").unwrap()
+    Regex::new(
+        r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs)).*(-X|--method)\s+(PUT|POST|PATCH|DELETE)",
+    )
+    .unwrap()
 });
 
 // Worktree enforcement regexes
@@ -823,6 +826,11 @@ mod tests {
             "gh api repos/owner/repo/pulls/123",
             "gh api repos/owner/repo/issues",
             "gh api repos/owner/repo/commits",
+            "gh api repos/owner/repo/contents/README.md",
+            "gh api repos/owner/repo/git/refs",
+            "gh api repos/owner/repo/git/trees/abc123",
+            "gh api repos/owner/repo/git/blobs/abc123",
+            "gh api repos/owner/repo/git/commits/abc123",
             "gh pr list",
         ];
         for cmd in &allowed {
