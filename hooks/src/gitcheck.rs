@@ -496,7 +496,24 @@ fn extract_git_subcommand(segment: &str) -> Option<GitSubcommand<'_>> {
             if word == "-C" {
                 had_dir_flag = true;
             }
-            words.next(); // skip the argument
+            // Skip the argument — handle quoted values spanning multiple tokens
+            // (e.g. `-c "user.name=Mr Test"` splits into `"user.name=Mr` and `Test"`)
+            if let Some(arg) = words.next() {
+                if let Some(quote) = arg.as_bytes().first().copied() {
+                    if (quote == b'"' || quote == b'\'')
+                        && !arg
+                            .as_bytes()
+                            .last()
+                            .is_some_and(|&b| b == quote && arg.len() > 1)
+                    {
+                        for w in words.by_ref() {
+                            if w.as_bytes().last() == Some(&quote) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             continue;
         }
         // Other flags (--flag, -f, --key=value)
@@ -1061,6 +1078,17 @@ mod tests {
         assert!(
             reason.is_some(),
             "SSH -C in quotes should not bypass bare git check"
+        );
+    }
+
+    #[test]
+    fn test_quoted_c_flag_does_not_bypass() {
+        // Regression: `-c "key=val with spaces"` should not break subcommand extraction
+        let cmd = "git -c \"user.name=Mr Test\" add .";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_some(),
+            "quoted -c value with spaces should not bypass bare git check"
         );
     }
 
