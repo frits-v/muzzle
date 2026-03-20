@@ -73,13 +73,15 @@ static RE_GIT_C_PATH: LazyLock<Regex> =
 
 // In-place file modification commands (bypass vectors)
 static RE_SED_INPLACE: LazyLock<Regex> = LazyLock::new(|| {
-    // sed -i '' 'pattern' file  OR  sed -i 'pattern' file  OR  sed -i.bak 'pattern' file
-    Regex::new(r"\bsed\s+-i\b").unwrap()
+    // sed -i '' 'pattern' file  OR  sed -i.bak 'pattern' file
+    // Also: sed --in-place and sed --in-place=SUFFIX (GNU long-form)
+    Regex::new(r"\bsed\s+(?:-i\b|--in-place\b)").unwrap()
 });
+// Use [a-z0-9]* to match only lowercase flags, excluding -I (include path)
 static RE_PERL_INPLACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bperl\s+-[^\s]*i").unwrap());
+    LazyLock::new(|| Regex::new(r"\bperl\s+-[a-z0-9]*i").unwrap());
 static RE_RUBY_INPLACE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bruby\s+-[^\s]*i").unwrap());
+    LazyLock::new(|| Regex::new(r"\bruby\s+-[a-z0-9]*i").unwrap());
 
 // File copy/move commands
 static RE_CP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bcp\b").unwrap());
@@ -91,7 +93,9 @@ static RE_INSTALL: LazyLock<Regex> =
 static RE_RSYNC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\brsync\b").unwrap());
 static RE_DD_OF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bdd\b[^;|&]*\bof=([^\s;|&]+)").unwrap());
-static RE_PATCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bpatch\b").unwrap());
+// Anchor to command-start position to avoid matching inside git format-patch / --patch
+static RE_PATCH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:^|\|{1,2}|&&|;\s*)\s*patch\b").unwrap());
 
 /// Run all 8 git safety checks against a Bash command.
 pub fn check_git_safety(cmd: &str) -> GitResult {
@@ -1251,6 +1255,67 @@ mod tests {
         assert!(
             paths.iter().any(|p| p == "/usr/local/bin/tool"),
             "standalone install should detect dest: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_perl_include_path_no_false_positive() {
+        // perl -Ilib is an include path flag, NOT an in-place edit
+        let safe_cmds = [
+            "perl -Ilib script.pl",
+            "perl -Ilib -e 'print 1'",
+            "ruby -Ilib spec/test_spec.rb",
+            "ruby -Ilib -e 'puts 1'",
+        ];
+        for cmd in &safe_cmds {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "-I include flag {:?} should not produce write paths, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_git_format_patch_no_false_positive() {
+        // git format-patch, git show --patch, git diff --patch are read-only
+        let safe_cmds = [
+            "git format-patch -1 HEAD",
+            "git show --patch HEAD",
+            "git diff --patch HEAD~1 src/file.rs",
+        ];
+        for cmd in &safe_cmds {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "git patch command {:?} should not produce write paths, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_sed_long_form_inplace() {
+        let paths = check_bash_write_paths("sed --in-place 's/foo/bar/' src/lib.rs");
+        assert!(
+            paths.iter().any(|p| p == "rel:src/lib.rs"),
+            "sed --in-place should detect target: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_sed_long_form_inplace_with_suffix() {
+        let paths = check_bash_write_paths("sed --in-place=.bak 's/old/new/' config.yml");
+        assert!(
+            paths.iter().any(|p| p == "rel:config.yml"),
+            "sed --in-place=.bak should detect target: {:?}",
             paths
         );
     }

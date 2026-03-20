@@ -647,13 +647,17 @@ fn clean_orphaned_wt_branches(repo_path: &Path) {
 fn check_sandbox_enabled() {
     let home = config::home();
 
-    // Settings files in Claude Code precedence order (any scope can enable it)
+    // Settings files in Claude Code precedence order (any scope can enable it).
+    // Collect values from ALL files before deciding — settings merge across scopes.
     let settings_paths = [
         home.join(".claude/settings.json"),
         home.join(".claude/settings.local.json"),
         PathBuf::from(".claude/settings.json"),
         PathBuf::from(".claude/settings.local.json"),
     ];
+
+    let mut sandbox_enabled = false;
+    let mut allow_unsandboxed = true; // default is true per CC docs
 
     for path in &settings_paths {
         if let Ok(content) = fs::read_to_string(path) {
@@ -664,24 +668,28 @@ fn check_sandbox_enabled() {
                     .and_then(|e| e.as_bool())
                     == Some(true)
                 {
-                    // Sandbox is enabled — also check allowUnsandboxedCommands
-                    let escape_hatch = json
-                        .get("sandbox")
-                        .and_then(|s| s.get("allowUnsandboxedCommands"))
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(true); // default is true per CC docs
-
-                    if escape_hatch {
-                        emit_context(
-                            "\nWARNING: Sandbox is enabled but `allowUnsandboxedCommands` is true (default). \
-                             The `dangerouslyDisableSandbox` escape hatch can bypass OS-level enforcement. \
-                             Ask the human operator to set `\"allowUnsandboxedCommands\": false` in sandbox settings.",
-                        );
-                    }
-                    return;
+                    sandbox_enabled = true;
+                }
+                if let Some(v) = json
+                    .get("sandbox")
+                    .and_then(|s| s.get("allowUnsandboxedCommands"))
+                    .and_then(|v| v.as_bool())
+                {
+                    allow_unsandboxed = v;
                 }
             }
         }
+    }
+
+    if sandbox_enabled {
+        if allow_unsandboxed {
+            emit_context(
+                "\nWARNING: Sandbox is enabled but `allowUnsandboxedCommands` is true (default). \
+                 The `dangerouslyDisableSandbox` escape hatch can bypass OS-level enforcement. \
+                 Ask the human operator to set `\"allowUnsandboxedCommands\": false` in sandbox settings.",
+            );
+        }
+        return;
     }
 
     // No settings file has sandbox.enabled: true
