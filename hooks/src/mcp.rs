@@ -1,8 +1,8 @@
 //! MCP tool routing decisions.
 //!
 //! FR-MR-1 through FR-MR-9: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
-//! context7 (read-only), datadog-mcp (read/write split), and codebase-memory-mcp
-//! (read/write split) routing.
+//! context7, datadog-mcp, and codebase-memory-mcp routing. All three new servers
+//! use explicit tool enumeration with Ask fallthrough for unknown tools.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
@@ -52,9 +52,9 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
     if let Some(action) = tool_name.strip_prefix("mcp__sysdig__") {
         return route_sysdig(action);
     }
-    // FR-MR-8: context7 — documentation lookup only (resolve-library-id, query-docs)
-    if tool_name.starts_with("mcp__plugin_context7_context7__") {
-        return McpDecision::Allow;
+    // FR-MR-8: context7 — documentation lookup only
+    if let Some(action) = tool_name.strip_prefix("mcp__plugin_context7_context7__") {
+        return route_context7(action);
     }
     // FR-MR-8b: datadog-mcp — read-only observability queries
     if let Some(action) = tool_name.strip_prefix("mcp__datadog-mcp__") {
@@ -276,6 +276,20 @@ fn route_sysdig(action: &str) -> McpDecision {
         "Sysdig MCP tool '{}' — unknown tool, requires confirmation",
         action
     ))
+}
+
+/// FR-MR-8: context7 routing — documentation lookups.
+///
+/// Only two tools exist today (resolve-library-id, query-docs), both read-only.
+/// Unknown tools fall through to Ask for safety against future additions.
+fn route_context7(action: &str) -> McpDecision {
+    match action {
+        "resolve-library-id" | "query-docs" => McpDecision::Allow,
+        _ => McpDecision::Ask(format!(
+            "context7 tool '{}' — unknown operation, requires confirmation",
+            action
+        )),
+    }
 }
 
 /// FR-MR-8b: datadog-mcp routing (separate from FR-MR-3 `mcp__datadog__`).
@@ -523,7 +537,7 @@ mod tests {
         }
     }
 
-    // FR-MR-8: Read-only servers
+    // FR-MR-8: context7
     #[test]
     fn test_context7_allow() {
         let tools = [
@@ -534,6 +548,15 @@ mod tests {
             let d = route(tool);
             assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
         }
+    }
+
+    #[test]
+    fn test_context7_unknown_ask() {
+        let d = route("mcp__plugin_context7_context7__delete-library");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown context7 tool"
+        );
     }
 
     #[test]
