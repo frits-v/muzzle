@@ -192,12 +192,17 @@ fn cmd_capture(args: &[String]) -> Result<(), String> {
     let session_id = args.get(1).ok_or("capture requires <session-id>")?;
     let project = args.get(2).ok_or("capture requires <project>")?;
 
-    let changelog =
-        fs::read_to_string(changelog_path).map_err(|e| format!("read changelog: {e}"))?;
+    let changelog = match fs::read_to_string(changelog_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // No changelog = no mutating tool calls this session — nothing to capture.
+            return Ok(());
+        }
+        Err(e) => return Err(format!("read changelog: {e}")),
+    };
 
     let summary = capture::parse_changelog(&changelog);
     if summary.is_empty() {
-        eprintln!("No mutations found in changelog.");
         return Ok(());
     }
 
