@@ -1,8 +1,11 @@
 //! MCP tool routing decisions.
 //!
 //! FR-MR-1 through FR-MR-9: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
-//! context7, datadog-mcp, and codebase-memory-mcp routing. All three new servers
-//! use explicit tool enumeration with Ask fallthrough for unknown tools.
+//! context7, datadog-mcp, and codebase-memory-mcp routing.
+//!
+//! context7 and codebase-memory-mcp use explicit tool enumeration; datadog-mcp
+//! uses verb-prefix matching (consistent with FR-MR-3). All three fall through
+//! to Ask for unrecognized tools.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
