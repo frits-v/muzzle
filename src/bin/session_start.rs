@@ -689,9 +689,27 @@ fn check_sandbox_enabled() {
         "\nSANDBOX NOT ENABLED: Claude Code's native Bash sandbox is not active. \
          Without it, file-writing Bash commands (sed -i, cp, mv, python, etc.) can bypass \
          worktree isolation via renamed binaries or interpreters.\n\
-         Ask the human operator to enable the sandbox. They can run the /sandbox slash command, \
-         or add this to their settings.json:\n\
-         {\"sandbox\": {\"enabled\": true, \"allowUnsandboxedCommands\": false}}\n\
+         Ask the human operator to enable the sandbox by adding this to settings.json:\n\
+         {\n  \
+           \"sandbox\": {\n    \
+             \"enabled\": true,\n    \
+             \"allowUnsandboxedCommands\": false,\n    \
+             \"filesystem\": {\n      \
+               \"denyWrite\": [\"~/src\"],\n      \
+               \"allowWrite\": [\n        \
+                 \".worktrees\",\n        \
+                 \".agents\",\n        \
+                 \".claude\",\n        \
+                 \".claude-tmp\",\n        \
+                 \"CLAUDE.md\",\n        \
+                 \"AGENTS.md\",\n        \
+                 \"GOALS.md\",\n        \
+                 \"GOALS.yaml\"\n      \
+               ]\n    \
+             }\n  \
+           }\n\
+         }\n\
+         See docs/sandbox.md for full architecture details.\n\
          Until enabled, muzzle provides regex-based write-path detection as a best-effort defense.",
     );
 }
