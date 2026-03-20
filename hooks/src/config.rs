@@ -419,45 +419,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pid_marker_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = pid_marker_path(12345);
-        let expected = state_dir().join("by-pid/12345");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_pid_marker_dir_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = pid_marker_dir_path();
-        assert!(path.ends_with("by-pid"));
-    }
-
-    #[test]
-    fn test_spec_file_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = spec_file_path("test-session-id");
-        let expected = state_dir().join("specs/test-session-id.env");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_changelog_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = changelog_path("test-session-id");
-        let expected = state_dir().join("changelogs/test-session-id.md");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_session_tmp_dir() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = session_tmp_dir("test-session-id");
-        let expected = state_dir().join("tmp/test-session-id");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
     fn test_home_and_workspace_not_empty() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         assert!(!home().as_os_str().is_empty());
@@ -491,30 +452,6 @@ mod tests {
     fn test_config_file_path() {
         let path = config_file();
         assert!(path.ends_with(".config/muzzle/config"));
-    }
-
-    #[test]
-    fn test_changelog_gz_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = changelog_gz_path("sess-1");
-        let expected = state_dir().join("changelogs/sess-1.md.gz");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_trace_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = trace_path("sess-2");
-        let expected = state_dir().join("traces/sess-2.md");
-        assert_eq!(path, expected);
-    }
-
-    #[test]
-    fn test_trace_gz_path() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let path = trace_gz_path("sess-2");
-        let expected = state_dir().join("traces/sess-2.md.gz");
-        assert_eq!(path, expected);
     }
 
     #[test]

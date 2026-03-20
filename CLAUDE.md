@@ -154,11 +154,19 @@ feat(memory): add FTS5 full-text search to memory store
 evolve: cycle 13 -- directive-4-proptest improved
 ```
 
-## Lint Suppression Policy
+## Lint Suppressions
 
-**Lint rule exclusion comments require human approval.** Never add `#[allow(...)]`,
-`// nolint`, `# shellcheck disable=...`, or any lint suppression annotation without
-explicit user sign-off. If a lint rule fires, fix the underlying issue instead.
+**NEVER add lint suppression comments without explicit human approval.** This includes
+`#[allow(...)]`, `// nolint`, `# shellcheck disable`, `# noqa`, `# type: ignore`,
+`# pyright: ignore`, `# zizmor: ignore`, or any equivalent across all linter/checker tools.
+
+When a lint check fails:
+1. Diagnose the root cause
+2. Fix the underlying issue (refactor code, add proper type narrowing, use `cast()`, etc.)
+3. If the only viable option is a suppression, explain why and **ask before adding it**
+
+Suppressions hide real issues and accumulate as technical debt. The right fix is almost
+always to address the code, not silence the tool.
 
 There are currently no pre-approved suppressions.
 
@@ -177,8 +185,8 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-219 tests (166 unit + 5 doc + 13 integration + 10 proptest + 25 memory) plus 4 fuzz targets.
-Run with `make test` or `cargo test`.
+243 hooks tests (211 unit + 5 doc + 13 integration + 14 proptest) plus 4 fuzz targets
+and 25 memory tests. Run with `cargo test` or `cargo test -p muzzle-hooks`.
 
 Test patterns:
 - Session tests use `SESSION_LOCK` mutex to avoid PPID marker conflicts
@@ -227,6 +235,97 @@ After creating or pushing to a PR, start a background poll loop:
 
 All GitHub Actions are **SHA-pinned** with version comments. No rolling tags (`@v4`).
 Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
+
+## Tech Debt
+
+**Fix tech debt when you see it. Never add new tech debt.**
+
+### Fix what you touch
+
+When working in a file, fix problems you encounter — even if they're unrelated to your task:
+- CI failures, lint warnings, or type errors in files you modify
+- Stale comments, dead imports, unused variables
+- Review findings of any severity (minor, advisory, critical — fix them all)
+
+### Don't create new debt
+
+- Don't defer fixes to follow-ups — fix now unless genuinely blocked
+- Don't categorize findings into "fix now" vs "follow-up" as a way to ship faster
+- Don't leave known issues for the next person
+
+### The only valid reasons to defer
+
+- The fix requires changes in a different repository or PR
+- It needs input from someone who isn't available right now
+- It's blocked by an unresolved design question
+
+In greenfield code especially, there is zero reason to defer anything — no backwards
+compatibility, no released consumers, no excuse.
+
+## Testing Strategy (AI-Written Code)
+
+**When AI writes both implementation and tests, the tests share the implementation's
+blind spots.** Unit tests with model-invented mock data verify the model's assumptions,
+not reality. Every test suite needs at least one independent oracle — a source of truth
+the implementation author did not create.
+
+### Independent oracles (use these)
+
+| Layer              | What it catches                            | When to use                              |
+|--------------------|--------------------------------------------|------------------------------------------|
+| **Property-based** | Edge cases the author didn't think of      | Parsing, validation, any pure function   |
+| **Golden fixtures**| Drift from real-world data formats          | API response parsing, protocol handling  |
+| **Integration**    | Plumbing bugs mocks can't surface          | API clients, CLI contracts, state machines|
+
+**Property-based tests (proptest):** Define invariants, let the framework generate inputs.
+Each property must be able to *fail* on a plausible bug. "Output is sorted" is tautological
+when the code calls `sorted()`. "Excluded prefixes never leak through" catches a real
+filter bypass.
+
+**Golden fixtures:** Capture real command outputs and commit as test data. Determine
+ground truth by reading the captured data by hand — never by running the implementation.
+If a regex change breaks a golden test, that's a real signal.
+
+**Integration tests:** Hit real binaries and file systems. Gate them appropriately and
+make them **blocking in CI** (not informational). Clean up after themselves.
+
+### Anti-patterns (don't do these)
+
+- **Testing framework guarantees** — don't test that a `#[derive]` works (the compiler's
+  job) or that `serde_json::to_string` produces JSON (serde's job)
+- **Model-invented mock data** — if you wrote the mock response to match your parser,
+  the test is a mirror, not an oracle
+- **Tautological properties** — "every returned int is positive" when the regex only
+  matches `\d+` proves nothing
+- **Deferring test layers to follow-up** — property tests and golden fixtures are cheap;
+  add them alongside unit tests, not later
+- **Redundant unit tests** — if a golden fixture AND a property test already cover a
+  function, a unit test for the same function is padding. Before adding a test, ask:
+  "what mutation would this catch that existing tests miss?"
+- **Fake property tests** — `proptest!` with no generated input variation is just a unit
+  test wearing a macro. Every property test must generate varying inputs that exercise
+  different code paths.
+
+### Mutation testing (quality gate)
+
+**cargo-mutants** is the deterministic oracle for test quality. It mutates source code
+and checks if tests catch the mutations. Surviving mutants = gaps in your test suite.
+
+```bash
+# Run mutation testing
+cargo mutants --package muzzle
+
+# Show results
+cat mutants.out/caught.txt
+cat mutants.out/missed.txt
+```
+
+**Rules:**
+- Run `cargo mutants` after writing tests, before claiming coverage is adequate
+- Surviving mutants in critical logic (sandboxing, git safety, path checking) must be
+  killed — add a test or justify why the mutation is equivalent
+- Surviving mutants in logging/formatting are acceptable
+- If a test can be deleted without any mutant surviving, the test was redundant — delete it
 
 ## Dependencies
 
