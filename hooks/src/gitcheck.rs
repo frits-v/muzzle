@@ -59,7 +59,7 @@ static RE_GH_API_WRITE_METHOD: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(-X[=\s]*(PUT|POST|PATCH|DELETE)|--method[=\s]+(PUT|POST|PATCH|DELETE))").unwrap()
 });
 static RE_GH_API_WRITE_BODY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\s(-f|--field|-F|--raw-field|-d|--data|--input)\s").unwrap()
+    Regex::new(r"\s(-f|--field|-F|--raw-field|-d|--data|--input)[=\s]").unwrap()
 });
 
 // Worktree enforcement regexes
@@ -827,6 +827,10 @@ mod tests {
             // Implicit POST via body fields (no -X/--method)
             "gh api repos/owner/repo/contents/file.txt -f message=create -f content=abc",
             "gh api repos/owner/repo/git/commits -f message=bypass -f tree=abc123",
+            // Equals-delimited body flags (implicit POST)
+            r#"gh api repos/owner/repo/git/commits --data='{"message":"bypass","tree":"abc123"}'"#,
+            "gh api repos/owner/repo/contents/file.txt --field=message=create --field=content=aGVsbG8=",
+            "gh api repos/owner/repo/git/commits --input=payload.json",
         ];
         for cmd in &blocked {
             let r = check_git_safety(cmd);
