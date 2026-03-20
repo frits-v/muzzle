@@ -100,8 +100,13 @@ This builds optimized binaries (~1.4 MB each) and installs them to `~/.local/sha
 
 ```bash
 mkdir -p ~/.config/muzzle
-echo 'workspace = /path/to/your/repos' > ~/.config/muzzle/config
+cat > ~/.config/muzzle/config << 'EOF'
+workspace = /path/to/your/repos
+# bin_dir = ~/.local/share/muzzle/bin   # override binary location
+EOF
 ```
+
+All settings can also be set via environment variables: `MUZZLE_WORKSPACES`, `MUZZLE_STATE_DIR`, `MUZZLE_BIN_DIR`.
 
 **2. Register hooks** — add to `~/.claude/settings.json`:
 
