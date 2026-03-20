@@ -303,15 +303,14 @@ fn route_datadog_mcp(action: &str) -> McpDecision {
 fn route_codebase_memory(action: &str) -> McpDecision {
     match action {
         "get_architecture" | "get_code_snippet" | "get_graph_schema" | "search_code"
-        | "search_graph" | "query_graph" | "trace_call_path" | "list_projects"
-        | "index_status" => McpDecision::Allow,
-        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr"
-        | "detect_changes" => {
-            McpDecision::Ask(format!(
-                "Codebase-memory write ({}) — modifies persistent storage, confirm before executing",
-                action
-            ))
+        | "search_graph" | "query_graph" | "trace_call_path" | "list_projects" | "index_status" => {
+            McpDecision::Allow
         }
+        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr"
+        | "detect_changes" => McpDecision::Ask(format!(
+            "Codebase-memory write ({}) — modifies persistent storage, confirm before executing",
+            action
+        )),
         _ => McpDecision::Ask(format!(
             "Codebase-memory MCP tool '{}' — unknown tool, requires confirmation",
             action
