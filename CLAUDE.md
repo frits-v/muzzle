@@ -106,6 +106,28 @@ CLI: `memory search|save|capture|context|inject|stats`
 
 Optional scopes for commit convention: add `memory`, `store`, `capture`, `inject` to the scopes list.
 
+### Hook Wiring
+
+**SessionStart** — inject memories into context (after `session-start`):
+```json
+{
+  "type": "command",
+  "command": "/PATH/TO/bin/memory inject",
+  "timeout": 5
+}
+```
+
+**SessionEnd** — capture changelog into memory (BEFORE `session-end`, which gzips the changelog):
+```json
+{
+  "type": "command",
+  "command": "/PATH/TO/bin/memory capture",
+  "timeout": 10
+}
+```
+
+Replace `/PATH/TO/bin/` with the actual install path (default: `~/.local/share/muzzle/bin/`).
+
 ## Commit Convention
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits
