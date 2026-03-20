@@ -109,7 +109,9 @@ fn run_binary(name: &str, json_input: &str) -> (String, String, i32) {
         });
 
     if let Some(ref mut stdin) = child.stdin {
-        stdin.write_all(json_input.as_bytes()).unwrap();
+        // Ignore BrokenPipe — the child may exit before reading all stdin
+        // (e.g. changelog exits immediately on empty/invalid input).
+        let _ = stdin.write_all(json_input.as_bytes());
     }
     drop(child.stdin.take());
 

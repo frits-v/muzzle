@@ -43,6 +43,7 @@ mod tests {
 
     #[test]
     fn test_worktree_missing_msg_format() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let msg = worktree_missing_msg("my-repo");
         assert!(msg.starts_with("WORKTREE_MISSING:my-repo"));
         assert!(msg.contains("ensure-worktree my-repo"));
