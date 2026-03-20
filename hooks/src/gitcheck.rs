@@ -52,12 +52,11 @@ static RE_GH_PR_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+pr\s+merge\b").unwrap());
 static RE_GH_API_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+api\b.*(/pulls/[0-9]+/merge|/merge)").unwrap());
-static RE_GH_API_COMMIT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs)).*(-X|--method)\s+(PUT|POST|PATCH|DELETE)",
-    )
-    .unwrap()
+static RE_GH_API_COMMIT_PATH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs))").unwrap()
 });
+static RE_GH_API_WRITE_METHOD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(-X|--method)\s+(PUT|POST|PATCH|DELETE)").unwrap());
 
 // Worktree enforcement regexes
 static RE_GIT_WORKTREE: LazyLock<Regex> =
@@ -150,7 +149,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     }
 
     // FR-GS-9: gh api calls that create server-side commits (bypass signing)
-    if RE_GH_API_COMMIT.is_match(cmd) {
+    if RE_GH_API_COMMIT_PATH.is_match(cmd) && RE_GH_API_WRITE_METHOD.is_match(cmd) {
         return GitResult::Block(
             "BLOCKED: gh api to commit-creating endpoint bypasses commit signing. Use local git instead.".into(),
         );
@@ -809,6 +808,10 @@ mod tests {
             "gh api repos/owner/repo/git/trees -X POST",
             "gh api repos/owner/repo/git/refs -X POST",
             "gh api repos/owner/repo/git/blobs -X POST",
+            // Method flag before path
+            "gh api -X POST repos/owner/repo/git/commits -f tree=abc123",
+            "gh api --method POST repos/owner/repo/git/commits",
+            "gh api --method PUT repos/owner/repo/contents/file.txt -f message=update",
         ];
         for cmd in &blocked {
             let r = check_git_safety(cmd);
