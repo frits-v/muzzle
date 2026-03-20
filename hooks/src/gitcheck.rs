@@ -449,17 +449,16 @@ pub fn is_worktree_management_op(cmd: &str) -> bool {
 /// Returns the subcommand name if a bare mutating invocation is found.
 fn find_bare_mutating_git(cmd: &str) -> Option<String> {
     for segment in RE_CMD_SEP.split(cmd) {
-        let segment = segment.trim();
-        if !RE_GIT_WORD_BOUNDARY.is_match(segment) {
+        // Strip shell-comment tail so `# git add` or `# cd /path` in
+        // trailing comments don't trigger false positives or bypasses.
+        let segment = strip_shell_comment(segment.trim());
+        if !RE_GIT_WORD_BOUNDARY.is_match(&segment) {
             continue;
         }
-        // Strip shell-comment tail before checking for `cd`, so that
-        // `git add . # cd /path` does not falsely skip the bare-git check.
-        let seg_no_comment = strip_shell_comment(segment);
-        if RE_CD_PATH.is_match(&seg_no_comment) {
+        if RE_CD_PATH.is_match(&segment) {
             continue;
         }
-        if let Some(result) = extract_git_subcommand(segment) {
+        if let Some(result) = extract_git_subcommand(&segment) {
             // Skip if git had -C flag (explicit working directory)
             if result.had_dir_flag {
                 continue;
@@ -1100,6 +1099,18 @@ mod tests {
         assert!(
             reason.is_some(),
             "shell comment with cd should not bypass bare git check"
+        );
+    }
+
+    #[test]
+    fn test_shell_comment_git_no_false_positive() {
+        // Regression: `# git add` in a comment should not cause a false block
+        let cmd = "cargo test # git add checkpoint";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_none(),
+            "git in shell comment should not trigger block, got: {:?}",
+            reason
         );
     }
 
