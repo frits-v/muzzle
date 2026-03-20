@@ -56,7 +56,7 @@ static RE_GH_API_COMMIT_PATH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs))").unwrap()
 });
 static RE_GH_API_WRITE_METHOD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(-X|--method)\s+(PUT|POST|PATCH|DELETE)").unwrap());
+    LazyLock::new(|| Regex::new(r"(-X|--method)[=\s]+(PUT|POST|PATCH|DELETE)").unwrap());
 
 // Worktree enforcement regexes
 static RE_GIT_WORKTREE: LazyLock<Regex> =
@@ -812,6 +812,9 @@ mod tests {
             "gh api -X POST repos/owner/repo/git/commits -f tree=abc123",
             "gh api --method POST repos/owner/repo/git/commits",
             "gh api --method PUT repos/owner/repo/contents/file.txt -f message=update",
+            // Equals-delimited method flag
+            "gh api --method=POST repos/owner/repo/git/commits -f tree=abc123",
+            "gh api --method=PUT repos/owner/repo/contents/file.txt -f content=...",
         ];
         for cmd in &blocked {
             let r = check_git_safety(cmd);

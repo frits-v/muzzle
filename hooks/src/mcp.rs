@@ -70,7 +70,7 @@ fn route_github(action: &str) -> McpDecision {
 
     // Deny: server-side commits bypass local git signing
     match action {
-        "create_or_update_file" | "push_files" => {
+        "create_or_update_file" | "push_files" | "delete_file" => {
             return McpDecision::Deny(
                 "Use local git — GitHub API commits bypass commit signing".into(),
             )
@@ -311,6 +311,7 @@ mod tests {
         let tools = [
             "mcp__github__push_files",
             "mcp__github__create_or_update_file",
+            "mcp__github__delete_file",
         ];
         for tool in &tools {
             let d = route(tool);
