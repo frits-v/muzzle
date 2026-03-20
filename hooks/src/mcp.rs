@@ -1,7 +1,8 @@
 //! MCP tool routing decisions.
 //!
 //! FR-MR-1 through FR-MR-9: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
-//! read-only servers (context7, datadog-mcp), and codebase-memory-mcp routing.
+//! context7 (read-only), datadog-mcp (read/write split), and codebase-memory-mcp
+//! (read/write split) routing.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
@@ -51,11 +52,13 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
     if let Some(action) = tool_name.strip_prefix("mcp__sysdig__") {
         return route_sysdig(action);
     }
-    // FR-MR-8: Read-only MCP servers — unconditionally allow all tools
-    if tool_name.starts_with("mcp__plugin_context7_context7__")
-        || tool_name.starts_with("mcp__datadog-mcp__")
-    {
+    // FR-MR-8: context7 — documentation lookup only (resolve-library-id, query-docs)
+    if tool_name.starts_with("mcp__plugin_context7_context7__") {
         return McpDecision::Allow;
+    }
+    // FR-MR-8b: datadog-mcp — read-only observability queries
+    if let Some(action) = tool_name.strip_prefix("mcp__datadog-mcp__") {
+        return route_datadog_mcp(action);
     }
     // FR-MR-9: Codebase-memory-mcp — read/write split
     if let Some(action) = tool_name.strip_prefix("mcp__codebase-memory-mcp__") {
@@ -275,6 +278,24 @@ fn route_sysdig(action: &str) -> McpDecision {
     ))
 }
 
+/// FR-MR-8b: datadog-mcp routing (separate from FR-MR-3 `mcp__datadog__`).
+///
+/// All current tools are read-only observability queries (analyze, search, get, check).
+/// Unknown tools fall through to Ask for safety against future write additions.
+fn route_datadog_mcp(action: &str) -> McpDecision {
+    if action.starts_with("analyze_")
+        || action.starts_with("search_")
+        || action.starts_with("get_")
+        || action.starts_with("check_")
+    {
+        return McpDecision::Allow;
+    }
+    McpDecision::Ask(format!(
+        "datadog-mcp tool '{}' — unknown operation, requires confirmation",
+        action
+    ))
+}
+
 /// FR-MR-9: Codebase-memory-mcp routing.
 ///
 /// Read-only graph/search queries are allowed; write operations (indexing,
@@ -283,8 +304,9 @@ fn route_codebase_memory(action: &str) -> McpDecision {
     match action {
         "get_architecture" | "get_code_snippet" | "get_graph_schema" | "search_code"
         | "search_graph" | "query_graph" | "trace_call_path" | "list_projects"
-        | "index_status" | "detect_changes" => McpDecision::Allow,
-        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr" => {
+        | "index_status" => McpDecision::Allow,
+        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr"
+        | "detect_changes" => {
             McpDecision::Ask(format!(
                 "Codebase-memory write ({}) — modifies persistent storage, confirm before executing",
                 action
@@ -516,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn test_datadog_mcp_allow() {
+    fn test_datadog_mcp_read_allow() {
         let tools = [
             "mcp__datadog-mcp__analyze_datadog_logs",
             "mcp__datadog-mcp__search_datadog_logs",
@@ -527,6 +549,15 @@ mod tests {
             let d = route(tool);
             assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
         }
+    }
+
+    #[test]
+    fn test_datadog_mcp_unknown_ask() {
+        let d = route("mcp__datadog-mcp__delete_something");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown datadog-mcp tool"
+        );
     }
 
     #[test]
@@ -551,6 +582,7 @@ mod tests {
             "mcp__codebase-memory-mcp__ingest_traces",
             "mcp__codebase-memory-mcp__delete_project",
             "mcp__codebase-memory-mcp__manage_adr",
+            "mcp__codebase-memory-mcp__detect_changes",
         ];
         for tool in &tools {
             let d = route(tool);
