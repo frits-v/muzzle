@@ -487,6 +487,10 @@ struct GitSubcommand<'a> {
 fn extract_git_subcommand(segment: &str) -> Option<GitSubcommand<'_>> {
     let m = RE_GIT_WORD_BOUNDARY.find(segment)?;
     let after_git = &segment[m.end()..];
+    // Skip git-lfs, git-annex, git-crypt, etc. — these are separate binaries
+    if after_git.starts_with('-') {
+        return None;
+    }
     let mut words = after_git.split_whitespace();
     let mut had_dir_flag = false;
     while let Some(word) = words.next() {
@@ -1089,6 +1093,24 @@ mod tests {
             reason.is_some(),
             "quoted -c value with spaces should not bypass bare git check"
         );
+    }
+
+    #[test]
+    fn test_git_extension_no_false_positive() {
+        // git-lfs, git-annex, git-crypt are separate binaries, not bare git
+        let cmds = [
+            "git-lfs push origin branch",
+            "git-annex add .",
+            "git-crypt unlock",
+        ];
+        for cmd in &cmds {
+            let reason = check_worktree_enforcement(cmd, true, "abc12345");
+            assert!(
+                reason.is_none(),
+                "git extension '{}' should not be blocked",
+                cmd
+            );
+        }
     }
 
     #[test]
