@@ -283,7 +283,9 @@ fn route_sysdig(action: &str) -> McpDecision {
 
 /// FR-MR-8: context7 routing — documentation lookups.
 ///
-/// Only two tools exist today (resolve-library-id, query-docs), both read-only.
+/// Two tools today: resolve-library-id and query-docs (plugin name from
+/// context7@claude-plugins-official; upstream @upstash/context7-mcp uses
+/// get-library-docs — our install exposes query-docs).
 /// Unknown tools fall through to Ask for safety against future additions.
 fn route_context7(action: &str) -> McpDecision {
     match action {
@@ -304,6 +306,7 @@ fn route_datadog_mcp(action: &str) -> McpDecision {
         || action.starts_with("search_")
         || action.starts_with("get_")
         || action.starts_with("check_")
+        || action.starts_with("list_")
     {
         return McpDecision::Allow;
     }
@@ -621,6 +624,15 @@ mod tests {
                 tool
             );
         }
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_unknown_ask() {
+        let d = route("mcp__codebase-memory-mcp__some_future_tool");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown codebase-memory-mcp tool"
+        );
     }
 
     // FR-MR-7: Unknown MCP
