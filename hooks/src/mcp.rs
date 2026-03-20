@@ -1,7 +1,7 @@
 //! MCP tool routing decisions.
 //!
-//! FR-MR-1 through FR-MR-8: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
-//! and read-only servers (context7, datadog-mcp, codebase-memory-mcp) routing.
+//! FR-MR-1 through FR-MR-9: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
+//! read-only servers (context7, datadog-mcp), and codebase-memory-mcp routing.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
@@ -54,9 +54,12 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
     // FR-MR-8: Read-only MCP servers — unconditionally allow all tools
     if tool_name.starts_with("mcp__plugin_context7_context7__")
         || tool_name.starts_with("mcp__datadog-mcp__")
-        || tool_name.starts_with("mcp__codebase-memory-mcp__")
     {
         return McpDecision::Allow;
+    }
+    // FR-MR-9: Codebase-memory-mcp — read/write split
+    if let Some(action) = tool_name.strip_prefix("mcp__codebase-memory-mcp__") {
+        return route_codebase_memory(action);
     }
     if tool_name.starts_with("mcp__") {
         // FR-MR-7: Unknown MCP tools -> ASK
@@ -270,6 +273,28 @@ fn route_sysdig(action: &str) -> McpDecision {
         "Sysdig MCP tool '{}' — unknown tool, requires confirmation",
         action
     ))
+}
+
+/// FR-MR-9: Codebase-memory-mcp routing.
+///
+/// Read-only graph/search queries are allowed; write operations (indexing,
+/// ingestion, deletion, ADR management) require confirmation.
+fn route_codebase_memory(action: &str) -> McpDecision {
+    match action {
+        "get_architecture" | "get_code_snippet" | "get_graph_schema" | "search_code"
+        | "search_graph" | "query_graph" | "trace_call_path" | "list_projects"
+        | "index_status" | "detect_changes" => McpDecision::Allow,
+        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr" => {
+            McpDecision::Ask(format!(
+                "Codebase-memory write ({}) — modifies persistent storage, confirm before executing",
+                action
+            ))
+        }
+        _ => McpDecision::Ask(format!(
+            "Codebase-memory MCP tool '{}' — unknown tool, requires confirmation",
+            action
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -505,16 +530,35 @@ mod tests {
     }
 
     #[test]
-    fn test_codebase_memory_mcp_allow() {
+    fn test_codebase_memory_mcp_read_allow() {
         let tools = [
             "mcp__codebase-memory-mcp__search_code",
             "mcp__codebase-memory-mcp__get_architecture",
             "mcp__codebase-memory-mcp__query_graph",
-            "mcp__codebase-memory-mcp__index_repository",
+            "mcp__codebase-memory-mcp__trace_call_path",
+            "mcp__codebase-memory-mcp__index_status",
         ];
         for tool in &tools {
             let d = route(tool);
             assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_write_ask() {
+        let tools = [
+            "mcp__codebase-memory-mcp__index_repository",
+            "mcp__codebase-memory-mcp__ingest_traces",
+            "mcp__codebase-memory-mcp__delete_project",
+            "mcp__codebase-memory-mcp__manage_adr",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert!(
+                matches!(d, McpDecision::Ask(_)),
+                "expected ASK for {}",
+                tool
+            );
         }
     }
 
