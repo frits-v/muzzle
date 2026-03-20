@@ -14,3 +14,9 @@
 {"cycle":14,"target":"directive-19-openssf-scorecard","result":"improved","canonical_sha":"2713ab4","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:34:10-07:00"}
 {"cycle":15,"target":"directive-19-codeowners-branch-protect","result":"improved","canonical_sha":"3fafd23","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:35:42-07:00"}
 {"cycle":16,"target":"directive-19-release-please-ci-trigger","result":"improved","canonical_sha":"79544f7","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:40:05-07:00"}
+{"cycle":17,"target":"directive-20-worktree-op-false-positive","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"timestamp":"2026-03-19T20:28:35-07:00"}
+{"cycle":18,"target":"directive-22-proptest-mcp","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"tests_before":216,"tests_after":220,"timestamp":"2026-03-19T20:30:11-07:00"}
+{"cycle":19,"target":"directive-24-changelog-proptest","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"tests_before":220,"tests_after":224,"timestamp":"2026-03-19T20:31:51-07:00"}
+{"cycle":20,"target":"mutant-kill-worktree-enforcement","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"tests_before":224,"tests_after":232,"timestamp":"2026-03-19T21:14:07-07:00"}
+{"cycle":21,"target":"mutant-kill-bash-write-extract-repo","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"tests_before":232,"tests_after":241,"timestamp":"2026-03-19T21:15:40-07:00"}
+{"cycle":22,"target":"mutant-kill-sandbox-mcp","result":"improved","canonical_sha":"78637bb","goals_passing":9,"goals_total":9,"tests_before":241,"tests_after":258,"timestamp":"2026-03-19T21:17:26-07:00"}

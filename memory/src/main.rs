@@ -84,6 +84,22 @@ fn parent_slash_base(path: &std::path::Path) -> String {
     }
 }
 
+/// Resolve the muzzle state directory (mirrors hooks/src/config.rs logic).
+fn resolve_state_dir() -> String {
+    if let Ok(sd) = env::var("MUZZLE_STATE_DIR") {
+        if !sd.is_empty() {
+            return sd;
+        }
+    }
+    if let Ok(xdg) = env::var("XDG_STATE_HOME") {
+        if !xdg.is_empty() {
+            return format!("{xdg}/muzzle");
+        }
+    }
+    let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{home}/.local/state/muzzle")
+}
+
 /// Simple flag lookup: find `flag` in `args` and return the next element.
 fn flag_val<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     args.iter()
@@ -109,7 +125,7 @@ fn print_usage() {
     eprintln!(
         "  save    <title> <content> [--type TYPE] [--topic KEY] [--source SRC] [-p project]"
     );
-    eprintln!("  capture <changelog-path> <session-id> <project>");
+    eprintln!("  capture [changelog-path] [session-id] [project]");
     eprintln!("  context [project]");
     eprintln!("  inject  [project]");
     eprintln!("  stats");
@@ -188,16 +204,51 @@ fn cmd_save(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_capture(args: &[String]) -> Result<(), String> {
-    let changelog_path = args.first().ok_or("capture requires <changelog-path>")?;
-    let session_id = args.get(1).ok_or("capture requires <session-id>")?;
-    let project = args.get(2).ok_or("capture requires <project>")?;
+    // Resolve changelog path: explicit arg, or follow the current-changelog symlink.
+    let (changelog_path_buf, session_id_owned, project_owned);
+    let (changelog_path, session_id, project): (&str, &str, &str);
 
-    let changelog =
-        fs::read_to_string(changelog_path).map_err(|e| format!("read changelog: {e}"))?;
+    if let Some(path) = args.first() {
+        changelog_path = path;
+        session_id = args.get(1).map(|s| s.as_str()).unwrap_or("unknown");
+        project = args
+            .get(2)
+            .map(|s| s.as_str())
+            .unwrap_or_else(|| "unknown");
+    } else {
+        // Zero-arg mode: resolve from symlink.
+        let state_dir = resolve_state_dir();
+        let symlink = format!("{state_dir}/current-changelog.md");
+        let target = fs::read_link(&symlink)
+            .map_err(|e| format!("read symlink {symlink}: {e}"))?;
+        // Target is relative: "changelogs/<session-id>.md"
+        changelog_path_buf = format!(
+            "{state_dir}/{}",
+            target.to_string_lossy()
+        );
+        // Extract session ID from filename: "<uuid>.md" → "<uuid>"
+        session_id_owned = target
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        project_owned = project_from_cwd();
+        changelog_path = &changelog_path_buf;
+        session_id = &session_id_owned;
+        project = &project_owned;
+    }
+
+    let changelog = match fs::read_to_string(changelog_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // No changelog = no mutating tool calls this session — nothing to capture.
+            return Ok(());
+        }
+        Err(e) => return Err(format!("read changelog: {e}")),
+    };
 
     let summary = capture::parse_changelog(&changelog);
     if summary.is_empty() {
-        eprintln!("No mutations found in changelog.");
         return Ok(());
     }
 

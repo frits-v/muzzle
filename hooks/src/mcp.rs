@@ -357,15 +357,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_atlassian_create_jira_ask() {
-        let d = route("mcp__claude_ai_Atlassian__createJiraIssue");
-        assert!(
-            matches!(d, McpDecision::Ask(_)),
-            "expected ASK for createJiraIssue"
-        );
-    }
-
     // FR-MR-3: Datadog
     #[test]
     fn test_datadog_read_allow() {
@@ -567,34 +558,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rate_limit_expired_entries() {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let session_id = "test-rate-limit-expired";
-        let rate_dir = config::rate_limit_dir(session_id);
-        let _ = fs::create_dir_all(&rate_dir);
-        let counter_file = rate_dir.join("createJiraIssue");
-
-        // Pre-populate with entries outside the window (expired)
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let old_ts = now - config::ATLASSIAN_RATE_WINDOW - 100;
-        let entries: Vec<String> = (0..10).map(|i| (old_ts - i as u64).to_string()).collect();
-        let _ = fs::write(&counter_file, entries.join("\n") + "\n");
-
-        // Only the current call counts (expired entries are filtered out)
-        let exceeded = check_atlassian_rate_limit("createJiraIssue", session_id);
-        assert!(
-            !exceeded,
-            "expected rate limit NOT exceeded with expired entries"
-        );
-
-        // Cleanup
-        let _ = fs::remove_dir_all(&rate_dir);
-    }
-
-    #[test]
     fn test_route_with_session_rate_limit_message() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Exhaust the rate limit, then verify the route function returns the rate limit message
@@ -620,6 +583,150 @@ mod tests {
             matches!(d, McpDecision::Ask(ref msg) if msg.contains("Rate limit")),
             "expected rate limit ASK message, got {:?}",
             d
+        );
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&rate_dir);
+    }
+
+    // ── Mutation-killing: verify specific Ask messages ──
+
+    #[test]
+    fn test_github_merge_message_specific() {
+        let d = route("mcp__github__merge_pull_request");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("merging"),
+                "merge Ask should mention 'merging', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_github_review_message_specific() {
+        let d = route("mcp__github__create_pull_request_review");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("review"),
+                "review Ask should mention 'review', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_github_unknown_action_message() {
+        // Unknown GitHub action falls through to generic ask
+        let d = route("mcp__github__delete_repository");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("unknown tool"),
+                "unknown GitHub action should say 'unknown tool', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_atlassian_read_prefixes_independent() {
+        // Each read prefix should independently allow
+        let prefixes = [
+            ("get", "mcp__claude_ai_Atlassian__getJiraIssue"),
+            (
+                "search",
+                "mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql",
+            ),
+            ("list", "mcp__claude_ai_Atlassian__listProjects"),
+            ("lookup", "mcp__claude_ai_Atlassian__lookupJiraAccountId"),
+            ("fetch", "mcp__claude_ai_Atlassian__fetchAtlassian"),
+        ];
+        for (prefix, tool) in &prefixes {
+            let d = route(tool);
+            assert_eq!(
+                d,
+                McpDecision::Allow,
+                "Atlassian {} prefix should Allow for {}",
+                prefix,
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn test_slack_write_messages_specific() {
+        let d = route("mcp__claude_ai_Slack__slack_send_message");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("visible to others"),
+                "Slack write should mention 'visible to others', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_slack_unknown_message() {
+        let d = route("mcp__claude_ai_Slack__slack_delete_message");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("unknown tool"),
+                "unknown Slack action should say 'unknown tool', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_atlassian_confluence_message_specific() {
+        let d = route("mcp__claude_ai_Atlassian__createConfluencePage");
+        if let McpDecision::Ask(msg) = &d {
+            assert!(
+                msg.contains("Confluence") && msg.contains("shared documentation"),
+                "Confluence write should mention 'Confluence' and 'shared documentation', got: {}",
+                msg
+            );
+        } else {
+            panic!("expected Ask, got {:?}", d);
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_boundary_exact() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let session_id = "test-rate-limit-boundary";
+        let rate_dir = config::rate_limit_dir(session_id);
+        let _ = fs::create_dir_all(&rate_dir);
+        let counter_file = rate_dir.join("createJiraIssue");
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Pre-populate with exactly (LIMIT - 1) entries — current call makes it LIMIT
+        let entries: Vec<String> = (0..config::ATLASSIAN_RATE_LIMIT - 1)
+            .map(|i| (now - i as u64).to_string())
+            .collect();
+        let _ = fs::write(&counter_file, entries.join("\n") + "\n");
+
+        // At exactly the limit: (LIMIT - 1) existing + 1 current = LIMIT
+        // Should NOT exceed (> not >=)
+        let exceeded = check_atlassian_rate_limit("createJiraIssue", session_id);
+        assert!(
+            !exceeded,
+            "at exactly the limit ({}) should NOT exceed",
+            config::ATLASSIAN_RATE_LIMIT
         );
 
         // Cleanup

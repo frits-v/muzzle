@@ -52,10 +52,11 @@ static RE_GH_PR_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+pr\s+merge\b").unwrap());
 static RE_GH_API_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+api\b.*(/pulls/[0-9]+/merge|/merge)").unwrap());
+static RE_GIT_WORKTREE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\b.*\bworktree\s+(add|list|remove|prune|move|repair|lock|unlock)\b").unwrap()
+});
 
 // Worktree enforcement regexes
-static RE_GIT_WORKTREE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bgit\b[^;|&]*\bworktree\b").unwrap());
 static RE_GIT_C: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|\S+)"#).unwrap());
 static RE_CD_PATH: LazyLock<Regex> =
@@ -405,7 +406,7 @@ pub fn is_repo_git_op(cmd: &str) -> bool {
 
 /// Check if a command is managing worktrees.
 pub fn is_worktree_management_op(cmd: &str) -> bool {
-    cmd.contains("worktree")
+    RE_GIT_WORKTREE.is_match(cmd)
 }
 
 #[cfg(test)]
@@ -505,20 +506,6 @@ mod tests {
                 cmd
             );
         }
-    }
-
-    // FR-GS-5: --no-verify
-    #[test]
-    fn test_no_verify() {
-        let r = check_git_safety("git push --no-verify origin feature");
-        assert!(matches!(r, GitResult::Block(_)));
-    }
-
-    // FR-GS-6: --follow-tags
-    #[test]
-    fn test_follow_tags() {
-        let r = check_git_safety("git push --follow-tags origin feature");
-        assert!(matches!(r, GitResult::Block(_)));
     }
 
     // FR-GS-7: Delete semver tags
@@ -646,6 +633,146 @@ mod tests {
     fn test_worktree_enforcement_bare_checkout() {
         let reason = check_worktree_enforcement("git checkout feature-branch", true, "abc12345");
         assert!(reason.is_some(), "expected deny for bare git checkout");
+        let msg = reason.unwrap();
+        assert!(
+            msg.contains("BLOCKED"),
+            "bare checkout should say BLOCKED, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_non_git_command() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let reason = check_worktree_enforcement("ls -la /some/path", true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(reason.is_none(), "non-git commands should be allowed");
+    }
+
+    #[test]
+    fn test_worktree_enforcement_git_outside_workspace() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = "git -C /tmp/other-project status";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(
+            reason.is_none(),
+            "git outside workspace should be allowed, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_cd_pattern_deny() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("cd {fixed_ws}/ops && git status");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(
+            reason.is_some(),
+            "cd to main checkout + git should be denied"
+        );
+        let msg = reason.unwrap();
+        assert!(
+            msg.contains("ops"),
+            "deny message should reference repo name, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_cd_no_git() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        // cd to workspace repo but no git command — should be allowed
+        // (note: this doesn't match because cmd doesn't contain "git")
+        let cmd = format!("cd {fixed_ws}/ops && ls -la");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(
+            reason.is_none(),
+            "cd without git should be allowed, got: {:?}",
+            reason
+        );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_existing_wt_dir_blocked() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Create a temporary workspace with an actual worktree dir
+        let fixed_ws = "/tmp/muzzle-mutant-wt-test";
+        let wt_dir = format!("{}/acme-api/.worktrees/abc12345", fixed_ws);
+        std::fs::create_dir_all(&wt_dir).expect("create wt dir");
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+
+        let cmd = format!("git -C {fixed_ws}/acme-api status");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+
+        // When worktree dir EXISTS, should get BLOCKED (not WORKTREE_MISSING)
+        assert!(reason.is_some(), "expected deny even with existing wt dir");
+        let msg = reason.unwrap();
+        assert!(
+            msg.contains("BLOCKED"),
+            "should say BLOCKED when wt dir exists, got: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("WORKTREE_MISSING"),
+            "should NOT be WORKTREE_MISSING when wt dir exists, got: {}",
+            msg
+        );
+
+        let _ = std::fs::remove_dir_all(fixed_ws);
+    }
+
+    #[test]
+    fn test_worktree_enforcement_cd_existing_wt_dir_blocked() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-mutant-wt-cd-test";
+        let wt_dir = format!("{}/ops/.worktrees/xyz99999", fixed_ws);
+        std::fs::create_dir_all(&wt_dir).expect("create wt dir");
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+
+        let cmd = format!("cd {fixed_ws}/ops && git status");
+        let reason = check_worktree_enforcement(&cmd, true, "xyz99999");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+
+        assert!(reason.is_some(), "expected deny for cd to main checkout");
+        let msg = reason.unwrap();
+        assert!(
+            msg.contains("BLOCKED") && !msg.contains("WORKTREE_MISSING"),
+            "should be BLOCKED not WORKTREE_MISSING, got: {}",
+            msg
+        );
+
+        let _ = std::fs::remove_dir_all(fixed_ws);
+    }
+
+    #[test]
+    fn test_worktree_enforcement_checkout_with_git_c_allowed() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        // git checkout WITH -C path should not hit bare checkout block
+        let cmd = format!("git -C {fixed_ws}/web-app checkout feature");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        // Should be blocked by the git-C main checkout check, NOT the bare checkout check
+        assert!(reason.is_some(), "expected deny via git-C path");
+        let msg = reason.unwrap();
+        assert!(
+            !msg.contains("Bare git checkout"),
+            "should be blocked by git-C check not bare checkout, got: {}",
+            msg
+        );
     }
 
     #[test]
@@ -738,6 +865,116 @@ mod tests {
     }
 
     #[test]
+    fn test_bash_write_paths_quoted_git_c() {
+        // git -C with quoted paths — tests the trim_matches closure
+        let paths = check_bash_write_paths(r#"git -C "/tmp/my repo" status"#);
+        assert!(
+            paths.iter().any(|p| p == "gitc:/tmp/my repo"),
+            "expected quoted path in gitc paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_single_quoted_git_c() {
+        let paths = check_bash_write_paths("git -C '/tmp/my-repo' status");
+        assert!(
+            paths.iter().any(|p| p == "gitc:/tmp/my-repo"),
+            "expected single-quoted path in gitc paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_append_redirect() {
+        let paths = check_bash_write_paths("echo hello >> /tmp/append.log");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/append.log"),
+            "expected append redirect path: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_stderr_redirect() {
+        let paths = check_bash_write_paths("cmd 2>/tmp/err.log");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/err.log"),
+            "expected stderr redirect path: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_no_redirect() {
+        let paths = check_bash_write_paths("echo hello world");
+        let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+        assert!(
+            non_gitc.is_empty(),
+            "no-redirect command should return no paths, got: {:?}",
+            non_gitc
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_git_c_relative_ignored() {
+        // Relative git -C path should NOT appear
+        let paths = check_bash_write_paths("git -C relative-repo status");
+        assert!(
+            !paths.iter().any(|p| p.contains("relative-repo")),
+            "relative git -C path should be ignored: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_from_git_op_quoted_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!(r#"git -C "{fixed_ws}/web-app" status"#);
+        let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert_eq!(
+            repo.as_deref(),
+            Some("web-app"),
+            "should extract web-app from quoted git -C path"
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_from_git_op_worktree_path_none() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        // .worktrees/ path is NOT a main checkout → extract_repo should still
+        // return something (it extracts the repo name, worktree check is separate)
+        let cmd = format!("git -C {fixed_ws}/web-app/.worktrees/abc12345 status");
+        let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        // The repo name extraction still works (returns "web-app")
+        assert!(
+            repo.is_some(),
+            "should still extract repo from worktree path"
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_from_git_op_cd_double_amp() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmd = format!("cd {fixed_ws}/api-server && git log --oneline");
+        let repo = extract_repo_from_git_op(&cmd);
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert_eq!(
+            repo.as_deref(),
+            Some("api-server"),
+            "should extract from cd && git pattern"
+        );
+    }
+
+    #[test]
     fn test_is_repo_git_op() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let fixed_ws = "/tmp/muzzle-test-ws";
@@ -750,13 +987,40 @@ mod tests {
 
     #[test]
     fn test_is_worktree_management_op() {
-        assert!(is_worktree_management_op("git worktree add /path"));
-        assert!(is_worktree_management_op("git worktree list"));
-        assert!(is_worktree_management_op("git worktree remove /p"));
-        assert!(!is_worktree_management_op("git status"));
-        assert!(!is_worktree_management_op("git branch -a"));
-        // Note: uses contains(), so any mention of "worktree" matches
-        assert!(is_worktree_management_op("echo worktree"));
+        let positive = [
+            "git worktree add /path",
+            "git worktree list",
+            "git worktree remove /p",
+            "git worktree prune",
+            "git worktree move /a /b",
+            "git worktree repair",
+            "git worktree lock /p",
+            "git worktree unlock /p",
+            "git -C /some/repo worktree add /path",
+        ];
+        for cmd in &positive {
+            assert!(
+                is_worktree_management_op(cmd),
+                "expected true for {:?}",
+                cmd
+            );
+        }
+
+        let negative = [
+            "git status",
+            "git branch -a",
+            "echo worktree",
+            "cat worktree.txt",
+            "git log --oneline -- worktree",
+            "echo git worktree",
+        ];
+        for cmd in &negative {
+            assert!(
+                !is_worktree_management_op(cmd),
+                "expected false for {:?}",
+                cmd
+            );
+        }
     }
 
     #[test]

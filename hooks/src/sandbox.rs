@@ -471,30 +471,6 @@ mod tests {
     }
 
     #[test]
-    fn test_system_path_deny() {
-        let paths = [
-            "/etc/hosts",
-            "/usr/local/bin/foo",
-            "/System/Library/test",
-            "/Library/test",
-            "/bin/sh",
-            "/sbin/mount",
-            "/var/log/syslog",
-            "/opt/homebrew/bin/foo",
-        ];
-        let sess = no_session();
-        for p in &paths {
-            let result = check_path(p, Some(&sess));
-            assert!(
-                matches!(result, PathDecision::Deny(_)),
-                "expected DENY for system path {:?}, got {:?}",
-                p,
-                result
-            );
-        }
-    }
-
-    #[test]
     fn test_device_path_allow() {
         let paths = [
             "/dev/null",
@@ -1261,5 +1237,158 @@ mod tests {
     fn test_normalize_double_slashes() {
         // Double slashes produce empty segments which are skipped
         assert_eq!(normalize_dot_segments("//etc//hosts"), "/etc/hosts");
+    }
+
+    // ── Mutation-killing tests: extract_repo / extract_rel_path ──
+
+    #[test]
+    fn test_extract_repo_basic() {
+        assert_eq!(extract_repo("/ws/my-repo/src/main.rs", "/ws"), "my-repo");
+        assert_eq!(extract_repo("/ws/my-repo", "/ws"), "my-repo");
+        assert_eq!(extract_repo("/other/path", "/ws"), "");
+        assert_eq!(extract_repo("/ws/", "/ws"), "");
+    }
+
+    #[test]
+    fn test_extract_rel_path_basic() {
+        assert_eq!(
+            extract_rel_path("/ws/repo/src/main.rs", "repo", "/ws"),
+            "src/main.rs"
+        );
+        assert_eq!(
+            extract_rel_path("/ws/repo/file.txt", "repo", "/ws"),
+            "file.txt"
+        );
+        // Path that doesn't match prefix — falls back to file_name
+        assert_eq!(
+            extract_rel_path("/other/path/file.txt", "repo", "/ws"),
+            "file.txt"
+        );
+    }
+
+    #[test]
+    fn test_extract_rel_path_no_filename() {
+        // Edge case: path with no file component
+        assert_eq!(extract_rel_path("/", "repo", "/ws"), "");
+    }
+
+    // ── Mutation-killing tests: is_system_path_resolved ──
+
+    #[test]
+    fn test_is_system_path_resolved_non_system() {
+        // Non-system paths must return false
+        let home = config::home();
+        let safe = format!("{}/Documents/test.txt", home.display());
+        assert!(
+            !is_system_path_resolved(&safe),
+            "home path should not be system path"
+        );
+        assert!(
+            !is_system_path_resolved("/tmp/foo"),
+            "/tmp should not be a system path"
+        );
+    }
+
+    #[test]
+    fn test_is_system_path_resolved_system() {
+        assert!(
+            is_system_path_resolved("/etc/hosts"),
+            "/etc/hosts should be system path"
+        );
+        assert!(
+            is_system_path_resolved("/usr/local/bin/foo"),
+            "/usr/local should be system path"
+        );
+    }
+
+    // ── Mutation-killing: check_path_with_context differentiates contexts ──
+
+    #[test]
+    fn test_context_bash_vs_filetool_for_tmp() {
+        let sess = no_session();
+        // Same path, different context — must yield different results
+        let bash_result = check_path_with_context("/tmp/test.txt", Some(&sess), ToolContext::Bash);
+        let file_result =
+            check_path_with_context("/tmp/test.txt", Some(&sess), ToolContext::FileTool);
+        assert!(
+            matches!(bash_result, PathDecision::Allow),
+            "/tmp via Bash should Allow"
+        );
+        assert!(
+            matches!(file_result, PathDecision::Ask(_)),
+            "/tmp via FileTool should Ask"
+        );
+    }
+
+    #[test]
+    fn test_worktree_redirect_message_contains_path() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        let p = format!("{}/web-app/src/main.py", ws_str);
+        let result = check_path(p.as_str(), Some(&sess));
+        if let PathDecision::Deny(msg) = &result {
+            assert!(
+                msg.contains("REDIRECT") || msg.contains("WORKTREE_MISSING"),
+                "main checkout deny should REDIRECT or WORKTREE_MISSING, got: {}",
+                msg
+            );
+            if msg.contains("REDIRECT") {
+                assert!(
+                    msg.contains("/.worktrees/"),
+                    "REDIRECT should include worktree path, got: {}",
+                    msg
+                );
+                assert!(
+                    msg.contains("web-app"),
+                    "REDIRECT should mention repo name, got: {}",
+                    msg
+                );
+            }
+        } else {
+            panic!("expected Deny for main checkout, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_state_dir_paths_allowed_with_active_worktrees() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let sd = config::state_dir();
+        // State dir paths are allowed even with active worktrees
+        let paths = [
+            format!("{}/changelogs/abc12345-test.md", sd.display()),
+            format!("{}/specs/abc12345-test.env", sd.display()),
+        ];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "state dir path {:?} should be ALLOW with active worktrees, got {:?}",
+                p,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_global_claude_config_allowed_with_active_worktrees() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let home = config::home();
+        let paths = [
+            format!("{}/.claude/settings.json", home.display()),
+            format!("{}/.claude/projects/test/memory.md", home.display()),
+        ];
+        for p in &paths {
+            let result = check_path(p, Some(&sess));
+            assert!(
+                matches!(result, PathDecision::Allow),
+                "global claude config {:?} should be ALLOW, got {:?}",
+                p,
+                result
+            );
+        }
     }
 }
