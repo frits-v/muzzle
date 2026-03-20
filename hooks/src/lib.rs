@@ -22,9 +22,11 @@ pub mod worktree;
 
 /// Format a WORKTREE_MISSING denial message for lazy worktree creation.
 pub fn worktree_missing_msg(repo: &str) -> String {
+    let bin = config::bin_dir().join("ensure-worktree");
     format!(
         "WORKTREE_MISSING:{repo} \
-         — Run: .claude/hooks/bin/ensure-worktree {repo}"
+         — Run: {} {repo}",
+        bin.display()
     )
 }
 
@@ -41,17 +43,36 @@ mod tests {
 
     #[test]
     fn test_worktree_missing_msg_format() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let msg = worktree_missing_msg("my-repo");
         assert!(msg.starts_with("WORKTREE_MISSING:my-repo"));
         assert!(msg.contains("ensure-worktree my-repo"));
+        // Must contain an absolute-looking path, not the old relative one
+        assert!(
+            !msg.contains(".claude/hooks/bin"),
+            "should not contain hardcoded relative path: {msg}"
+        );
     }
 
     #[test]
     fn test_worktree_missing_msg_special_chars() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let msg = worktree_missing_msg("repo-with-dashes");
         assert!(msg.starts_with("WORKTREE_MISSING:repo-with-dashes"));
 
         let msg = worktree_missing_msg(".dotfile-repo");
         assert!(msg.starts_with("WORKTREE_MISSING:.dotfile-repo"));
+    }
+
+    #[test]
+    fn test_worktree_missing_msg_uses_bin_dir() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("MUZZLE_BIN_DIR", "/opt/muzzle/bin");
+        let msg = worktree_missing_msg("acme-api");
+        std::env::remove_var("MUZZLE_BIN_DIR");
+        assert!(
+            msg.contains("/opt/muzzle/bin/ensure-worktree acme-api"),
+            "should use MUZZLE_BIN_DIR: {msg}"
+        );
     }
 }

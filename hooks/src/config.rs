@@ -351,6 +351,40 @@ pub fn rate_limit_dir(session_id: &str) -> PathBuf {
     session_tmp_dir(session_id).join("rate-limits")
 }
 
+// ── Binary directory ─────────────────────────────────────────────────
+
+/// Directory containing muzzle binaries (ensure-worktree, permissions, etc.).
+///
+/// Resolution order:
+/// 1. `MUZZLE_BIN_DIR` env var
+/// 2. `bin_dir` key in config
+/// 3. Parent directory of the currently running executable
+/// 4. `$HOME/.local/share/muzzle/bin` default
+pub fn bin_dir() -> PathBuf {
+    if let Ok(bd) = std::env::var("MUZZLE_BIN_DIR") {
+        if !bd.is_empty() {
+            return PathBuf::from(bd);
+        }
+    }
+
+    if let Some(bd) = read_config_key("bin_dir") {
+        return expand_tilde(&bd, &home().to_string_lossy());
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        let exe = exe.canonicalize().unwrap_or(exe);
+        if let Some(parent) = exe.parent() {
+            return parent.to_path_buf();
+        }
+    }
+
+    home()
+        .join(".local")
+        .join("share")
+        .join("muzzle")
+        .join("bin")
+}
+
 // ── Worktree helpers (workspace-relative) ───────────────────────────
 
 /// .worktrees directory for a repo.
@@ -754,5 +788,33 @@ mod tests {
             path,
             PathBuf::from("/tmp/muzzle-test-state/specs/sess-42.env")
         );
+    }
+
+    // ── bin_dir tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_bin_dir_env_override() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("MUZZLE_BIN_DIR", "/opt/muzzle/bin");
+        let bd = bin_dir();
+        std::env::remove_var("MUZZLE_BIN_DIR");
+        assert_eq!(bd, PathBuf::from("/opt/muzzle/bin"));
+    }
+
+    #[test]
+    fn test_bin_dir_empty_env_falls_through() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var("MUZZLE_BIN_DIR", "");
+        let bd = bin_dir();
+        std::env::remove_var("MUZZLE_BIN_DIR");
+        assert!(!bd.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_bin_dir_default_not_empty() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var("MUZZLE_BIN_DIR");
+        let bd = bin_dir();
+        assert!(!bd.as_os_str().is_empty());
     }
 }
