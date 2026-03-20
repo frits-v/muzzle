@@ -562,10 +562,14 @@ mod tests {
     #[test]
     fn test_codebase_memory_mcp_read_allow() {
         let tools = [
-            "mcp__codebase-memory-mcp__search_code",
             "mcp__codebase-memory-mcp__get_architecture",
+            "mcp__codebase-memory-mcp__get_code_snippet",
+            "mcp__codebase-memory-mcp__get_graph_schema",
+            "mcp__codebase-memory-mcp__search_code",
+            "mcp__codebase-memory-mcp__search_graph",
             "mcp__codebase-memory-mcp__query_graph",
             "mcp__codebase-memory-mcp__trace_call_path",
+            "mcp__codebase-memory-mcp__list_projects",
             "mcp__codebase-memory-mcp__index_status",
         ];
         for tool in &tools {
