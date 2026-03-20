@@ -87,7 +87,10 @@ const MUTATING_GIT_SUBCMDS: &[&str] = &[
     "switch",
 ];
 
-/// Git global flags that consume a separate argument token.
+/// Git global flags that consume a separate argument token (argument is skipped
+/// during subcommand extraction). Note: only `-C` is treated as a working-dir
+/// context flag; `--git-dir`/`--work-tree`/`--namespace` are consumed for
+/// correct parsing but do NOT suppress the bare-command check.
 const GIT_FLAGS_WITH_ARG: &[&str] = &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
 
 // Bash write-path extraction regexes
@@ -450,9 +453,10 @@ fn find_bare_mutating_git(cmd: &str) -> Option<String> {
         if !RE_GIT_WORD_BOUNDARY.is_match(segment) {
             continue;
         }
-        // Skip if this segment has a `cd` before the git invocation —
-        // cd sets the working directory so the git command is not bare.
-        if RE_CD_PATH.is_match(segment) {
+        // Strip shell-comment tail before checking for `cd`, so that
+        // `git add . # cd /path` does not falsely skip the bare-git check.
+        let seg_no_comment = strip_shell_comment(segment);
+        if RE_CD_PATH.is_match(&seg_no_comment) {
             continue;
         }
         if let Some(result) = extract_git_subcommand(segment) {
@@ -472,7 +476,7 @@ fn find_bare_mutating_git(cmd: &str) -> Option<String> {
 struct GitSubcommand<'a> {
     /// The subcommand name (e.g. "add", "commit", "status").
     subcommand: &'a str,
-    /// True if `-C` (or another dir-setting flag) was seen before the subcommand.
+    /// True if `-C` was seen before the subcommand (explicit working directory).
     had_dir_flag: bool,
 }
 
@@ -505,6 +509,24 @@ fn extract_git_subcommand(segment: &str) -> Option<GitSubcommand<'_>> {
         });
     }
     None
+}
+
+/// Strip a shell comment from a command segment.
+///
+/// Removes everything from the first unquoted `#` to the end of the string.
+/// Respects single and double quotes (does not strip `#` inside quotes).
+fn strip_shell_comment(s: &str) -> String {
+    let mut in_single = false;
+    let mut in_double = false;
+    for (i, c) in s.char_indices() {
+        match c {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '#' if !in_single && !in_double => return s[..i].to_string(),
+            _ => {}
+        }
+    }
+    s.to_string()
 }
 
 #[cfg(test)]
@@ -1039,6 +1061,31 @@ mod tests {
         assert!(
             reason.is_some(),
             "SSH -C in quotes should not bypass bare git check"
+        );
+    }
+
+    #[test]
+    fn test_shell_comment_cd_does_not_bypass() {
+        // Regression: `# cd /path` in a comment should not skip the bare git check
+        let cmd = "git add . # cd /ws/repo";
+        let reason = check_worktree_enforcement(cmd, true, "abc12345");
+        assert!(
+            reason.is_some(),
+            "shell comment with cd should not bypass bare git check"
+        );
+    }
+
+    #[test]
+    fn test_strip_shell_comment() {
+        assert_eq!(strip_shell_comment("git add . # comment"), "git add . ");
+        assert_eq!(strip_shell_comment("git add ."), "git add .");
+        assert_eq!(
+            strip_shell_comment("git commit -m 'msg # not a comment'"),
+            "git commit -m 'msg # not a comment'"
+        );
+        assert_eq!(
+            strip_shell_comment("git commit -m \"msg # not a comment\""),
+            "git commit -m \"msg # not a comment\""
         );
     }
 
