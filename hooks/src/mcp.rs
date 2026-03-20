@@ -1,6 +1,7 @@
 //! MCP tool routing decisions.
 //!
-//! FR-MR-1 through FR-MR-7: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig routing.
+//! FR-MR-1 through FR-MR-8: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
+//! and read-only servers (context7, datadog-mcp, codebase-memory-mcp) routing.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
@@ -49,6 +50,13 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
     }
     if let Some(action) = tool_name.strip_prefix("mcp__sysdig__") {
         return route_sysdig(action);
+    }
+    // FR-MR-8: Read-only MCP servers — unconditionally allow all tools
+    if tool_name.starts_with("mcp__plugin_context7_context7__")
+        || tool_name.starts_with("mcp__datadog-mcp__")
+        || tool_name.starts_with("mcp__codebase-memory-mcp__")
+    {
+        return McpDecision::Allow;
     }
     if tool_name.starts_with("mcp__") {
         // FR-MR-7: Unknown MCP tools -> ASK
@@ -462,6 +470,47 @@ mod tests {
             "mcp__sysdig__get_event_info",
             "mcp__sysdig__k8s_list_clusters",
             "mcp__sysdig__list_runtime_events",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    // FR-MR-8: Read-only servers
+    #[test]
+    fn test_context7_allow() {
+        let tools = [
+            "mcp__plugin_context7_context7__resolve-library-id",
+            "mcp__plugin_context7_context7__query-docs",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_datadog_mcp_allow() {
+        let tools = [
+            "mcp__datadog-mcp__analyze_datadog_logs",
+            "mcp__datadog-mcp__search_datadog_logs",
+            "mcp__datadog-mcp__get_datadog_metric",
+            "mcp__datadog-mcp__check_datadog_mcp_setup",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_allow() {
+        let tools = [
+            "mcp__codebase-memory-mcp__search_code",
+            "mcp__codebase-memory-mcp__get_architecture",
+            "mcp__codebase-memory-mcp__query_graph",
+            "mcp__codebase-memory-mcp__index_repository",
         ];
         for tool in &tools {
             let d = route(tool);
