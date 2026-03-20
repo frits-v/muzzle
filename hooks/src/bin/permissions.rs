@@ -152,7 +152,7 @@ fn check_bash(input: &HookInput) -> Decision {
         return Decision::Allow;
     }
 
-    // Git safety checks (FR-GS-1 through FR-GS-8)
+    // Git safety checks (FR-GS-1 through FR-GS-9)
     match gitcheck::check_git_safety(&bi.command) {
         gitcheck::GitResult::Block(reason) => return Decision::Deny(reason),
         gitcheck::GitResult::Ok => {}

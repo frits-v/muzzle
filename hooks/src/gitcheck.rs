@@ -1,6 +1,6 @@
 //! Git safety checks for Bash commands.
 //!
-//! FR-GS-1 through FR-GS-8: All 8 git safety patterns.
+//! FR-GS-1 through FR-GS-9: All 9 git safety patterns.
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -23,7 +23,7 @@ pub struct AskResult {
     pub reason: String,
 }
 
-// Pre-compiled regexes for the 8 git safety patterns.
+// Pre-compiled regexes for the 9 git safety patterns.
 static RE_GIT_PUSH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bgit\b.*\bpush\b").unwrap());
 static RE_FORCE_FLAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\s--force(\s|$)|\s-f(\s|$))").unwrap());
@@ -52,6 +52,9 @@ static RE_GH_PR_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+pr\s+merge\b").unwrap());
 static RE_GH_API_MERGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgh\s+api\b.*(/pulls/[0-9]+/merge|/merge)").unwrap());
+static RE_GH_API_COMMIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgh\s+api\b.*/(?:contents/|git/(?:commits|trees|refs|blobs))").unwrap()
+});
 
 // Worktree enforcement regexes
 static RE_GIT_WORKTREE: LazyLock<Regex> =
@@ -71,7 +74,7 @@ static RE_TEE: LazyLock<Regex> =
 static RE_GIT_C_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|(\S+))"#).unwrap());
 
-/// Run all 8 git safety checks against a Bash command.
+/// Run all 9 git safety checks against a Bash command.
 pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-1: Force push without --force-with-lease
     if RE_GIT_PUSH.is_match(cmd)
@@ -140,6 +143,13 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_HARD_RESET.is_match(cmd) {
         return GitResult::Block(
             "BLOCKED: git reset --hard origin/main|master discards all local work. Use: git stash or git reset --soft".into(),
+        );
+    }
+
+    // FR-GS-9: gh api calls that create server-side commits (bypass signing)
+    if RE_GH_API_COMMIT.is_match(cmd) {
+        return GitResult::Block(
+            "BLOCKED: gh api to commit-creating endpoint bypasses commit signing. Use local git instead.".into(),
         );
     }
 
@@ -782,6 +792,40 @@ mod tests {
     fn test_non_git_commands_not_blocked() {
         let safe = ["ls -la", "cargo build", "cat file.txt", "make test"];
         for cmd in &safe {
+            let r = check_git_safety(cmd);
+            assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
+        }
+    }
+
+    // FR-GS-9: gh api server-side commit endpoints
+    #[test]
+    fn test_gh_api_commit_endpoints_blocked() {
+        let blocked = [
+            "gh api repos/owner/repo/contents/README.md -X PUT -f message=update",
+            "gh api repos/owner/repo/git/commits -X POST",
+            "gh api repos/owner/repo/git/trees -X POST",
+            "gh api repos/owner/repo/git/refs -X POST",
+            "gh api repos/owner/repo/git/blobs -X POST",
+        ];
+        for cmd in &blocked {
+            let r = check_git_safety(cmd);
+            assert!(
+                matches!(r, GitResult::Block(_)),
+                "expected BLOCK for {:?}",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_gh_api_read_endpoints_not_blocked() {
+        let allowed = [
+            "gh api repos/owner/repo/pulls/123",
+            "gh api repos/owner/repo/issues",
+            "gh api repos/owner/repo/commits",
+            "gh pr list",
+        ];
+        for cmd in &allowed {
             let r = check_git_safety(cmd);
             assert!(matches!(r, GitResult::Ok), "expected OK for {:?}", cmd);
         }
