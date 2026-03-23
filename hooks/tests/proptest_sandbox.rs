@@ -1,6 +1,7 @@
-//! Property-based tests for sandbox and gitcheck invariants.
+//! Property-based tests for sandbox, gitcheck, and MCP routing invariants.
 
 use muzzle::gitcheck;
+use muzzle::mcp::{self, McpDecision};
 use muzzle::sandbox::{self, PathDecision, ToolContext};
 use proptest::prelude::*;
 
@@ -86,14 +87,11 @@ proptest! {
     fn prop_tmp_paths_bash_allowed(suffix in "[a-zA-Z0-9_]{1,30}") {
         let path = format!("/tmp/{}", suffix);
         let result = sandbox::check_path_with_context(&path, None, ToolContext::Bash);
-        match result {
-            PathDecision::Allow => {} // expected for Bash writing to /tmp
-            PathDecision::Ask(_) => {} // also acceptable (FileTool context asks)
-            PathDecision::Deny(msg) => panic!(
-                "/tmp path '{}' via Bash should not be Deny: {}",
-                path, msg
-            ),
-        }
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "/tmp path '{}' via Bash should be Allow, got {:?}",
+            path, result
+        );
     }
 }
 
@@ -140,5 +138,76 @@ proptest! {
     #[test]
     fn prop_extract_repo_never_panics(cmd in ".*") {
         let _ = gitcheck::extract_repo_from_git_op(&cmd);
+    }
+}
+
+// --- MCP Routing Strategies ---
+
+/// Generate tool names for unknown MCP providers (not github, atlassian, datadog, sentry, slack, sysdig).
+fn unknown_mcp_strategy() -> impl Strategy<Value = String> {
+    "[a-z]{3,15}__[a-z_]{3,20}".prop_map(|action| format!("mcp__{}", action))
+}
+
+/// Generate non-MCP tool names (no mcp__ prefix).
+fn non_mcp_strategy() -> impl Strategy<Value = String> {
+    prop_oneof!["[A-Z][a-zA-Z]{2,15}", "Bash|Read|Write|Edit|Glob|Grep",]
+}
+
+// --- MCP Routing Properties ---
+
+proptest! {
+    /// Unknown MCP providers must ALWAYS get Ask, never Allow.
+    #[test]
+    fn prop_unknown_mcp_never_allowed(tool in unknown_mcp_strategy()) {
+        let known_prefixes = [
+            "mcp__github__",
+            "mcp__atlassian__",
+            "mcp__claude_ai_Atlassian__",
+            "mcp__datadog__",
+            "mcp__claude_ai_Sentry__",
+            "mcp__claude_ai_Slack__",
+            "mcp__sysdig__",
+        ];
+        // Skip tools that happen to match a known provider prefix
+        if known_prefixes.iter().any(|p| tool.starts_with(p)) {
+            return Ok(());
+        }
+        let result = mcp::route(&tool);
+        assert!(
+            matches!(result, McpDecision::Ask(_)),
+            "Unknown MCP tool '{}' should be Ask, got {:?}",
+            tool,
+            result
+        );
+    }
+
+    /// Non-MCP tools must ALWAYS be allowed.
+    #[test]
+    fn prop_non_mcp_always_allowed(tool in non_mcp_strategy()) {
+        let result = mcp::route(&tool);
+        assert!(
+            matches!(result, McpDecision::Allow),
+            "Non-MCP tool '{}' should be Allow, got {:?}",
+            tool,
+            result
+        );
+    }
+
+    /// MCP route must never panic on arbitrary input.
+    #[test]
+    fn prop_mcp_route_never_panics(tool in ".*") {
+        let _ = mcp::route(&tool);
+    }
+
+    /// MCP route must never return Deny (only Allow or Ask).
+    #[test]
+    fn prop_mcp_route_never_denies(tool in ".*") {
+        let result = mcp::route(&tool);
+        assert!(
+            !matches!(result, McpDecision::Deny(_)),
+            "MCP route should never Deny, got {:?} for '{}'",
+            result,
+            tool
+        );
     }
 }

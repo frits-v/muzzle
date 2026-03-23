@@ -51,10 +51,12 @@ across all targets, zero crashes. Run with nightly:
 
 ### 4. Add property-based tests for sandbox decisions
 
-Added 10 property-based tests via proptest covering sandbox and gitcheck
-invariants: system paths always denied, no panics on arbitrary input,
-/tmp paths via Bash allowed, force-push always blocked, safe git never
-blocked. Each property runs 256 cases by default.
+Added 14 property-based tests via proptest covering sandbox, gitcheck,
+and MCP routing invariants: system paths always denied, no panics on
+arbitrary input, /tmp paths via Bash allowed, force-push always blocked,
+safe git never blocked, unknown MCP always Ask, non-MCP always Allow,
+MCP route never panics, MCP route never Deny. Each property runs 256
+cases by default.
 
 **Steer:** complete
 
@@ -103,7 +105,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 220 tests (166 hooks unit + 5 doc + 13 hooks integration + 10 proptest + 22 memory unit + 4 memory integration). Do not regress.
+Current: 269 tests (211 hooks unit + 5 doc + 13 hooks integration + 14 proptest + 22 memory unit + 4 memory integration). Do not regress.
 
 **Steer:** increase
 
@@ -218,6 +220,79 @@ Current: 26 memory tests (22 unit + 4 integration). Binary: 1.4MB.
 
 **Steer:** increase
 
+### 21. Fix `is_worktree_management_op` false positive
+
+`is_worktree_management_op()` used `contains("worktree")` which matched
+any command mentioning the word "worktree" (e.g. `echo worktree`). Fixed
+by replacing with `RE_GIT_WORKTREE` regex requiring `\bgit\b.*\bworktree\s+`
+followed by a valid subcommand (`add|list|remove|prune|move|repair|lock|unlock`).
+Unified with the `check_worktree_enforcement` regex (removed duplicate).
+Test updated: 9 positive cases, 6 negative cases including the previously-broken
+`echo worktree`.
+
+**Steer:** complete
+
+### 22. Golden fixtures for hook JSON payloads
+
+Integration tests hardcode JSON strings that mirror the implementation's
+expected format. No captured real Claude Code hook payloads exist as
+committed fixtures. If Claude Code changes the payload envelope, tests
+would still pass against the stale format.
+
+Capture real `SessionStart`, `PreToolUse`, and `PostToolUse` payloads
+from a live session and commit as `tests/fixtures/*.json`. Use these as
+the primary input source for integration tests.
+
+**Steer:** increase
+
+### 23. Property-based tests for MCP routing
+
+Added 4 property-based tests for MCP routing invariants: unknown MCP
+providers always get Ask (never Allow), non-MCP tools always get Allow,
+route never panics on arbitrary input, and route never returns Deny.
+Each property runs 256 cases by default.
+
+**Steer:** complete
+
+### 24. Establish mutation testing baseline
+
+Baseline established via `cargo mutants` on `sandbox.rs`, `gitcheck.rs`,
+`mcp.rs`: **180 mutants tested, 121 caught, 45 missed, 14 unviable**
+(67% kill rate on critical modules).
+
+Missed mutants by function (security-critical first):
+
+| Function                       | Missed | Root cause                                           |
+|--------------------------------|--------|------------------------------------------------------|
+| `check_worktree_enforcement`   | 11     | Boolean logic (`\|\|`↔`&&`, `!` delete) not isolated |
+| `extract_repo_from_git_op`     | 7      | Multi-workspace path splitting under-tested           |
+| `check_bash_write_paths`       | 5      | Redirect operators (`>`, `>>`, `2>`) not distinct     |
+| `is_system_path_resolved`      | 3      | Symlink resolution paths not all exercised            |
+| `check_path_with_context`      | 6      | Context-dependent branches (`&&`↔`\|\|`) under-tested |
+| `route_github`                 | 2      | Ask arms delete to fallthrough Ask (equivalent)       |
+| `route_atlassian`              | 3      | `\|\|` chains in read-only prefix matching            |
+| `route_slack`                  | 2      | `\|\|` chains in prefix matching                      |
+| `check_atlassian_rate_limit`   | 2      | Off-by-one: `<` vs `<=`, `>` vs `>=`                 |
+| `extract_repo` / `extract_rel` | 3      | Return value mutations (empty vs "xyzzy")             |
+| `resolve_path`                 | 1      | `!` deletion in existence check                       |
+
+Target: kill all missed mutants in security-critical functions
+(`check_worktree_enforcement`, `check_path_with_context`,
+`is_system_path_resolved`, `check_bash_write_paths`). MCP route arm
+deletions that fall through to the same `Ask` variant are arguably
+equivalent and acceptable.
+
+**Steer:** increase
+
+### 25. Strengthen changelog format tests with invariant properties
+
+Added 4 property tests for `format_entry` structural invariants:
+output is always non-empty, always contains a bold marker (`**...**`),
+always starts with a backtick timestamp, and Bash entries with long
+commands (>200 chars) are always truncated. Uses generated tool names
+and input fields. Each property runs 256 cases by default.
+
+**Steer:** complete
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
