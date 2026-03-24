@@ -67,6 +67,145 @@ fn run() {
     decision.emit_and_exit();
 }
 
+/// Returns true if the tool call is an Agent invocation with a named identity
+/// (either `name` or `team_name` key present in tool_input).
+fn is_persona_eligible(input: &HookInput) -> bool {
+    if input.tool_name != "Agent" {
+        return false;
+    }
+    input.tool_input.get("name").is_some() || input.tool_input.get("team_name").is_some()
+}
+
+/// Infer an agent role from the Agent tool_input fields.
+///
+/// Priority:
+/// 1. `subagent_type` field (used verbatim)
+/// 2. `description` field keyword match
+/// 3. Fallback: "general"
+fn infer_role(tool_input: &serde_json::Value) -> String {
+    if let Some(st) = tool_input.get("subagent_type").and_then(|v| v.as_str()) {
+        if !st.is_empty() {
+            return st.to_string();
+        }
+    }
+
+    if let Some(desc) = tool_input.get("description").and_then(|v| v.as_str()) {
+        let desc_lower = desc.to_lowercase();
+        if desc_lower.contains("review") {
+            return "code-reviewer".to_string();
+        }
+        if desc_lower.contains("security") {
+            return "security-review".to_string();
+        }
+        if desc_lower.contains("research") {
+            return "researcher".to_string();
+        }
+        if desc_lower.contains("test") {
+            return "testing".to_string();
+        }
+        if desc_lower.contains("debug") {
+            return "debugging".to_string();
+        }
+        if desc_lower.contains("architect") {
+            return "architecture".to_string();
+        }
+    }
+
+    "general".to_string()
+}
+
+/// Shell out to `muzzle-persona assign` to get a preamble for the agent.
+///
+/// Prepends the preamble to the agent's prompt in tool_input.
+/// Fail-open: on any error (spawn fail, non-zero exit, bad JSON), returns Allow.
+fn check_agent(input: &HookInput) -> Decision {
+    let agent_name = input
+        .tool_input
+        .get("name")
+        .or_else(|| input.tool_input.get("team_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let role = infer_role(&input.tool_input);
+
+    let sess = session::resolve_readonly();
+    let session_id = sess.id.clone();
+
+    let project = muzzle::config::workspaces()
+        .into_iter()
+        .next()
+        .and_then(|ws| ws.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let persona_bin = muzzle::config::bin_dir().join("muzzle-persona");
+    let roles_json = format!("[\"{role}\"]");
+
+    let output = std::process::Command::new(&persona_bin)
+        .args([
+            "assign",
+            &format!("--roles={roles_json}"),
+            &format!("--project={project}"),
+            &format!("--session={session_id}"),
+            &format!("--agent-name={agent_name}"),
+        ])
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            eprintln!(
+                "muzzle-persona assign exited with status {}: {}",
+                o.status,
+                String::from_utf8_lossy(&o.stderr)
+            );
+            return Decision::Allow;
+        }
+        Err(e) => {
+            eprintln!("muzzle-persona spawn failed: {e}");
+            return Decision::Allow;
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let assignments: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("muzzle-persona output parse error: {e}");
+            return Decision::Allow;
+        }
+    };
+
+    let preamble = assignments
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|a| a.get("preamble"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if preamble.is_empty() {
+        return Decision::Allow;
+    }
+
+    // Prepend preamble to the original prompt
+    let mut modified = match input.tool_input.as_object() {
+        Some(obj) => obj.clone(),
+        None => return Decision::Allow,
+    };
+
+    let original_prompt = modified
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let new_prompt = format!("{preamble}\n\n{original_prompt}");
+    modified.insert("prompt".to_string(), serde_json::Value::String(new_prompt));
+
+    Decision::AllowWithUpdatedInput(modified)
+}
+
 fn route(input: &HookInput) -> Decision {
     // Always-safe tools (read-only, no side effects)
     if is_always_safe(&input.tool_name) {
@@ -86,6 +225,11 @@ fn route(input: &HookInput) -> Decision {
     // MCP tools
     if input.tool_name.starts_with("mcp__") {
         return check_mcp(input);
+    }
+
+    // Agent persona injection
+    if is_persona_eligible(input) {
+        return check_agent(input);
     }
 
     // Everything else
@@ -256,5 +400,64 @@ fn check_mcp(input: &HookInput) -> Decision {
         mcp::McpDecision::Allow => Decision::Allow,
         mcp::McpDecision::Deny(reason) => Decision::Deny(reason),
         mcp::McpDecision::Ask(reason) => Decision::Ask(reason),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_with_name_detected() {
+        let input = HookInput {
+            tool_name: "Agent".into(),
+            tool_input: serde_json::json!({"name": "worker-1", "prompt": "Do the thing", "description": "A worker"}),
+        };
+        assert!(is_persona_eligible(&input));
+    }
+
+    #[test]
+    fn agent_with_team_name_detected() {
+        let input = HookInput {
+            tool_name: "Agent".into(),
+            tool_input: serde_json::json!({"team_name": "swarm-123", "prompt": "Do the thing"}),
+        };
+        assert!(is_persona_eligible(&input));
+    }
+
+    #[test]
+    fn anonymous_agent_not_detected() {
+        let input = HookInput {
+            tool_name: "Agent".into(),
+            tool_input: serde_json::json!({"prompt": "Do the thing"}),
+        };
+        assert!(!is_persona_eligible(&input));
+    }
+
+    #[test]
+    fn non_agent_tool_not_detected() {
+        let input = HookInput {
+            tool_name: "Bash".into(),
+            tool_input: serde_json::json!({"command": "ls"}),
+        };
+        assert!(!is_persona_eligible(&input));
+    }
+
+    #[test]
+    fn infer_role_from_subagent_type() {
+        let input = serde_json::json!({"subagent_type": "code-reviewer", "prompt": "..."});
+        assert_eq!(infer_role(&input), "code-reviewer");
+    }
+
+    #[test]
+    fn infer_role_from_description() {
+        let input = serde_json::json!({"description": "Security audit worker", "prompt": "..."});
+        assert_eq!(infer_role(&input), "security-review");
+    }
+
+    #[test]
+    fn infer_role_fallback_to_general() {
+        let input = serde_json::json!({"prompt": "Do the thing"});
+        assert_eq!(infer_role(&input), "general");
     }
 }
