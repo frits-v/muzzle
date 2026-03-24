@@ -39,7 +39,7 @@ impl std::str::FromStr for VcsKind {
 
     /// Parse a [`VcsKind`] from its string representation.
     ///
-    /// Accepts the same strings produced by [`Display`]: `"git"`, `"jj"`,
+    /// Accepts the same strings produced by [`std::fmt::Display`]: `"git"`, `"jj"`,
     /// `"jj-coloc"`. Returns `Err` with a descriptive message for unknown
     /// values.
     fn from_str(s: &str) -> Result<Self, Self::Err> {

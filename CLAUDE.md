@@ -25,6 +25,10 @@ src/
   changelog.rs        # Audit log formatting + read-only detection
   log.rs              # Structured JSON logging to stderr
   mcp.rs              # MCP tool routing (GitHub, Atlassian, Datadog, etc.)
+  vcs/
+    mod.rs            # VcsBackend trait, VcsKind enum, auto-detection
+    git.rs            # GitBackend — delegates to worktree/ + gitcheck
+    jj.rs             # JjBackend — jj workspace ops + safety checks
   worktree/
     mod.rs            # Worktree creation, restore, ensure_for_repo
     git.rs            # Git command helpers (fetch, branch resolution)
