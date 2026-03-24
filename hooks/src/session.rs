@@ -73,16 +73,16 @@ impl State {
 
     /// Create a fully populated state from a session ID.
     pub fn from_id(session_id: &str) -> Self {
-        let worktree_active = spec_file_has_content(&config::spec_file_path(session_id));
-        let vcs_kind = match read_spec_file(&config::spec_file_path(session_id)) {
-            Ok(entries) if !entries.is_empty() => entries[0].vcs_kind,
-            _ => VcsKind::Git,
+        let spec_path = config::spec_file_path(session_id);
+        let (worktree_active, vcs_kind) = match read_spec_file(&spec_path) {
+            Ok(entries) if !entries.is_empty() => (true, entries[0].vcs_kind),
+            _ => (false, VcsKind::Git),
         };
         Self {
             id: session_id.to_string(),
             short_id: config::short_id(session_id),
             tmp_dir: config::session_tmp_dir(session_id),
-            spec_file: config::spec_file_path(session_id),
+            spec_file: spec_path,
             changelog_path: config::changelog_path(session_id),
             worktree_active,
             vcs_kind,
@@ -352,11 +352,6 @@ fn flock_unlock(file: &fs::File) {
     }
 }
 
-/// Check if the spec file exists and has content.
-fn spec_file_has_content(path: &Path) -> bool {
-    fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +360,11 @@ mod tests {
 
     // Serialize session tests to avoid PPID marker conflicts.
     static SESSION_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Check if the spec file exists and has content (test-only helper).
+    fn spec_file_has_content(path: &Path) -> bool {
+        fs::metadata(path).map(|m| m.len() > 0).unwrap_or(false)
+    }
 
     #[test]
     fn test_resolve_with_id() {

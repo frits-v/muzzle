@@ -228,7 +228,8 @@ fn check_bash(input: &HookInput) -> Decision {
         if !sess.worktree_active {
             let is_repo_op = if let Some(ref jj) = jj_backend {
                 use muzzle::vcs::VcsBackend;
-                (bi.command.contains("jj") && !jj.is_workspace_management_op(&bi.command))
+                (muzzle::vcs::jj::JjBackend::is_repo_op(&bi.command)
+                    && !jj.is_workspace_management_op(&bi.command))
                     || (bi.command.contains("git")
                         && gitcheck::is_repo_git_op(&bi.command)
                         && !gitcheck::is_worktree_management_op(&bi.command))

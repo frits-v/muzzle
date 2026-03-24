@@ -29,7 +29,7 @@ pub fn worktree_missing_msg(repo: &str, vcs_kind: vcs::VcsKind) -> String {
     let bin = config::bin_dir().join("ensure-worktree");
     format!(
         "WORKTREE_MISSING:{repo}:{vcs} \
-         — Run: {} {repo}",
+         — Run: {} {repo} {vcs}",
         bin.display(),
         vcs = vcs_kind,
     )
@@ -51,7 +51,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let msg = worktree_missing_msg("my-repo", vcs::VcsKind::Git);
         assert!(msg.starts_with("WORKTREE_MISSING:my-repo:git"));
-        assert!(msg.contains("ensure-worktree my-repo"));
+        assert!(msg.contains("ensure-worktree my-repo git"));
         // Must contain an absolute-looking path, not the old relative one
         assert!(
             !msg.contains(".claude/hooks/bin"),
@@ -76,7 +76,7 @@ mod tests {
         let msg = worktree_missing_msg("acme-api", vcs::VcsKind::Git);
         std::env::remove_var("MUZZLE_BIN_DIR");
         assert!(
-            msg.contains("/opt/muzzle/bin/ensure-worktree acme-api"),
+            msg.contains("/opt/muzzle/bin/ensure-worktree acme-api git"),
             "should use MUZZLE_BIN_DIR: {msg}"
         );
     }

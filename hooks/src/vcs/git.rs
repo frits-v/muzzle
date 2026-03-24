@@ -17,6 +17,27 @@ use std::process::Command;
 /// Zero-size struct — all state lives in the repository itself.
 pub struct GitBackend;
 
+/// Build args for an ephemeral `wt/<session_id>` branch worktree creation.
+fn ephemeral_worktree_args(
+    session_id: &str,
+    repo_str: &str,
+    wt_path: &Path,
+    default_branch: &str,
+) -> (String, Vec<String>) {
+    let br = format!("wt/{session_id}");
+    let args = vec![
+        "-C".into(),
+        repo_str.to_string(),
+        "worktree".into(),
+        "add".into(),
+        "-b".into(),
+        br.clone(),
+        wt_path.to_string_lossy().to_string(),
+        format!("origin/{default_branch}"),
+    ];
+    (br, args)
+}
+
 impl VcsBackend for GitBackend {
     fn kind(&self) -> VcsKind {
         VcsKind::Git
@@ -44,33 +65,11 @@ impl VcsBackend for GitBackend {
         let (actual_branch, args) = match branch {
             None => {
                 // No branch specified: create ephemeral wt/<short-id>.
-                let br = format!("wt/{session_id}");
-                let args = vec![
-                    "-C".into(),
-                    repo_str.clone(),
-                    "worktree".into(),
-                    "add".into(),
-                    "-b".into(),
-                    br.clone(),
-                    wt_path.to_string_lossy().to_string(),
-                    format!("origin/{default_branch}"),
-                ];
-                (br, args)
+                ephemeral_worktree_args(session_id, &repo_str, &wt_path, &default_branch)
             }
             Some(b) if b == default_branch => {
                 // Default branch requested: redirect to ephemeral (don't lock default).
-                let br = format!("wt/{session_id}");
-                let args = vec![
-                    "-C".into(),
-                    repo_str.clone(),
-                    "worktree".into(),
-                    "add".into(),
-                    "-b".into(),
-                    br.clone(),
-                    wt_path.to_string_lossy().to_string(),
-                    format!("origin/{default_branch}"),
-                ];
-                (br, args)
+                ephemeral_worktree_args(session_id, &repo_str, &wt_path, &default_branch)
             }
             Some(b) if git::branch_exists(repo_path, b) => {
                 // Existing branch: check it out.

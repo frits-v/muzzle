@@ -31,6 +31,18 @@ static RE_JJ_WORKSPACE: LazyLock<Regex> =
 static RE_JJ_EDIT_IMMUTABLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bjj\s+edit\s+(root|trunk)\b").unwrap());
 
+/// Matches jj subcommands that are utility-only and don't operate on repo state.
+static RE_JJ_SAFE_SUBCOMMAND: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bjj\s+(version|help|config|init)\b").unwrap());
+
+impl JjBackend {
+    /// Check if a jj command operates on the repository (not just a utility command
+    /// like `jj version` or `jj help`).
+    pub fn is_repo_op(cmd: &str) -> bool {
+        cmd.contains("jj") && !RE_JJ_SAFE_SUBCOMMAND.is_match(cmd)
+    }
+}
+
 impl VcsBackend for JjBackend {
     fn kind(&self) -> VcsKind {
         if self.colocated {
@@ -77,6 +89,10 @@ impl VcsBackend for JjBackend {
     }
 
     fn workspace_remove(&self, entry: &SpecEntry, _force: bool) -> (bool, Option<String>) {
+        // jj workspace forget is always safe — jj auto-snapshots all working
+        // copy changes, so there's no risk of data loss. The `force` parameter
+        // is a no-op for this backend.
+        //
         // Run forget from repo root (workspace dir may be in a bad state).
         let ws_name = std::path::Path::new(&entry.wt_path)
             .file_name()
@@ -129,21 +145,22 @@ impl VcsBackend for JjBackend {
         stdout
             .lines()
             .filter_map(|line| {
-                // Format: "name: <revision> (at <path>)"
+                // Format: "name: <change-id> <commit-id> <description>"
+                // Non-default workspaces may include "(at <path>)" but this
+                // isn't guaranteed across jj versions. Derive paths from the
+                // repo root as a best-effort fallback.
                 let name = line.split(':').next()?.trim().to_string();
                 let path = if let Some(start) = line.find("(at ") {
                     let rest = &line[start + 4..];
-                    rest.strip_suffix(')').unwrap_or(rest).trim().to_string()
+                    PathBuf::from(rest.strip_suffix(')').unwrap_or(rest).trim())
+                } else if name == "default" {
+                    // The default workspace lives at the repo root.
+                    repo_path.to_path_buf()
                 } else {
-                    return Some(WorkspaceInfo {
-                        name,
-                        path: PathBuf::new(),
-                    });
+                    // Non-default workspaces: best-effort, path unknown.
+                    PathBuf::new()
                 };
-                Some(WorkspaceInfo {
-                    name,
-                    path: PathBuf::from(path),
-                })
+                Some(WorkspaceInfo { name, path })
             })
             .collect()
     }
@@ -187,7 +204,11 @@ impl VcsBackend for JjBackend {
     }
 
     fn is_valid_workspace(&self, path: &str) -> bool {
-        Path::new(path).join(".jj").is_dir()
+        let p = Path::new(path);
+        // A jj workspace is valid if the directory exists AND either contains
+        // the `.jj/` store (repo root) or lives under a `.worktrees/` parent
+        // (session workspace created by muzzle).
+        p.is_dir() && (p.join(".jj").exists() || path.contains("/.worktrees/"))
     }
 
     fn check_safety(&self, cmd: &str) -> GitResult {

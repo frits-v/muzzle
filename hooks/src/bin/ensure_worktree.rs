@@ -38,8 +38,8 @@ fn run() {
 
     let repo = &args[1];
 
-    // Parse optional VCS kind from second argument (default: Git)
-    let vcs_kind: VcsKind = args.get(2).and_then(|s| s.parse().ok()).unwrap_or_default();
+    // Parse optional VCS kind from second argument; if omitted, auto-detect later.
+    let explicit_vcs_kind: Option<VcsKind> = args.get(2).and_then(|s| s.parse().ok());
 
     // Validate all workspaces exist before attempting anything
     if let Err(msg) = config::validate_workspaces() {
@@ -72,6 +72,22 @@ fn run() {
         }
     }
 
+    // Resolve repo path once (shared by all VCS backends)
+    let repo_path = match config::workspaces()
+        .iter()
+        .map(|ws| ws.join(repo))
+        .find(|p| p.is_dir())
+    {
+        Some(p) => p,
+        None => {
+            muzzle::log::error("ensure-worktree", &format!("repo not found: {repo}"));
+            std::process::exit(1);
+        }
+    };
+
+    // Auto-detect VCS from the repo directory if not explicitly provided
+    let vcs_kind = explicit_vcs_kind.unwrap_or_else(|| muzzle::vcs::detect(&repo_path));
+
     // Create worktree — route through appropriate VCS backend
     let entry = match vcs_kind {
         VcsKind::Jj | VcsKind::JjColocated => {
@@ -79,18 +95,6 @@ fn run() {
             use muzzle::vcs::VcsBackend;
             let jj = JjBackend {
                 colocated: vcs_kind == VcsKind::JjColocated,
-            };
-            // Resolve repo path
-            let repo_path = match config::workspaces()
-                .iter()
-                .map(|ws| ws.join(repo))
-                .find(|p| p.is_dir())
-            {
-                Some(p) => p,
-                None => {
-                    muzzle::log::error("ensure-worktree", &format!("repo not found: {repo}"));
-                    std::process::exit(1);
-                }
             };
             let dest = config::worktree_path(&repo_path, &sess.short_id);
             match jj.workspace_add(&repo_path, &dest, &sess.short_id, None, &sess.tmp_dir) {

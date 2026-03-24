@@ -90,11 +90,25 @@ fn remove_worktrees(sess: &session::State) {
                 None,
                 Some(&entry.wt_path),
             );
+            let cleanup_hint = match entry.vcs_kind {
+                VcsKind::Jj | VcsKind::JjColocated => {
+                    format!(
+                        "jj workspace forget {} && rm -rf {}",
+                        entry.wt_path, entry.wt_path
+                    )
+                }
+                VcsKind::Git => {
+                    format!(
+                        "git -C {} worktree remove --force {}",
+                        entry.repo_path, entry.wt_path
+                    )
+                }
+            };
             let _ = append_to_changelog(
                 &sess.changelog_path,
                 &format!(
-                    "\n### WARNING: Uncommitted worktree left behind\n- Path: {}\n- Cleanup: `git -C {} worktree remove --force {}`\n",
-                    entry.wt_path, entry.repo_path, entry.wt_path,
+                    "\n### WARNING: Uncommitted worktree left behind\n- Path: {}\n- Cleanup: `{cleanup_hint}`\n",
+                    entry.wt_path,
                 ),
             );
             continue;
