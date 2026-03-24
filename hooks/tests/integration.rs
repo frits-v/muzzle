@@ -164,6 +164,68 @@ fn test_permissions_force_push_denies() {
 }
 
 #[test]
+fn test_permissions_sandbox_disable_denies() {
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":true}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("deny"),
+        "dangerouslyDisableSandbox should be denied, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("dangerouslyDisableSandbox"),
+        "denial message should mention the flag, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_permissions_sandbox_disable_false_allows() {
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":false}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("permissions output should be JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "allow",
+        "dangerouslyDisableSandbox=false should be allowed, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_permissions_sandbox_disable_null_denies() {
+    // A non-boolean value (null) for dangerouslyDisableSandbox must be denied.
+    // Only explicit false or absent is safe — anything else means deny.
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":null}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("permissions output should be JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "deny",
+        "malformed dangerouslyDisableSandbox should be denied, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_permissions_sandbox_disable_string_denies() {
+    // A string value for dangerouslyDisableSandbox must also be denied.
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":"true"}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("permissions output should be JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "deny",
+        "string dangerouslyDisableSandbox should be denied, got: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_permissions_safe_bash_allows() {
     let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello"}}"#;
     let (stdout, _stderr, code) = run_binary("permissions", input);

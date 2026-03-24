@@ -146,6 +146,24 @@ fn check_filesystem(input: &HookInput) -> Decision {
 }
 
 fn check_bash(input: &HookInput) -> Decision {
+    // FR-SB-NOSANDBOXDISABLE: Block sandbox escape attempts.
+    // Inspects the raw JSON value before any serde deserialization so a
+    // malformed flag (null, string, number) cannot slip through via
+    // unwrap_or_default(). Only absent or explicit `false` is allowed.
+    if let Some(val) = input
+        .tool_input
+        .as_object()
+        .and_then(|obj| obj.get("dangerouslyDisableSandbox"))
+    {
+        if *val != serde_json::Value::Bool(false) {
+            return Decision::Deny(
+                "BLOCKED: dangerouslyDisableSandbox is not allowed — \
+                 add required paths to the sandbox allowlist instead"
+                    .into(),
+            );
+        }
+    }
+
     let bi: BashInput = serde_json::from_value(input.tool_input.clone()).unwrap_or_default();
 
     if bi.command.is_empty() {
