@@ -1,4 +1,4 @@
-use muzzle_persona::{broker, preamble, schema, seed};
+use muzzle_persona::{broker, preamble, release, schema, seed};
 use rusqlite::Connection;
 use std::path::PathBuf;
 
@@ -8,6 +8,12 @@ fn main() {
     match args.get(1).map(|s| s.as_str()) {
         Some("assign") => {
             if let Err(e) = run_assign(&args[2..]) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Some("release") => {
+            if let Err(e) = run_release(&args[2..]) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
@@ -112,5 +118,28 @@ fn run_assign(args: &[String]) -> Result<(), String> {
             .map_err(|e| format!("JSON serialization error: {e}"))?
     );
 
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// release subcommand
+// ---------------------------------------------------------------------------
+
+fn run_release(args: &[String]) -> Result<(), String> {
+    // 1. Parse required arguments.
+    let session_id = parse_arg(args, "session").ok_or("--session=<id> is required")?;
+
+    // 2. Open the DB.
+    let path = db_path()?;
+    let conn = Connection::open(&path)
+        .map_err(|e| format!("failed to open DB at {}: {e}", path.display()))?;
+
+    // 3. Ensure schema.
+    schema::ensure_schema(&conn).map_err(|e| format!("schema error: {e}"))?;
+
+    // 4. Release.
+    release::release(&conn, &session_id).map_err(|e| format!("release error: {e}"))?;
+
+    eprintln!("released session {session_id}");
     Ok(())
 }
