@@ -106,6 +106,37 @@ CLI: `memory search|save|capture|context|inject|stats`
 
 Optional scopes for commit convention: add `memory`, `store`, `capture`, `inject` to the scopes list.
 
+## Sandbox Configuration
+
+Muzzle uses defense-in-depth for worktree isolation:
+
+1. **CC native sandbox** (Seatbelt/bwrap) — OS-level enforcement for Bash commands
+2. **Muzzle PreToolUse hooks** — application-level enforcement for Edit/Write/MCP tools
+3. **Regex write-path detection** — best-effort fallback when sandbox is not enabled
+
+The OS-level sandbox is the only defense against renamed-binary attacks
+(`cp $(which sed) .bin/zet`). Enable it in `settings.json`:
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyWrite": ["~/src"],
+      "allowWrite": [
+        ".worktrees", ".agents", ".claude", ".claude-tmp",
+        "CLAUDE.md", "AGENTS.md", "GOALS.md", "GOALS.yaml"
+      ]
+    }
+  }
+}
+```
+
+The `allowWrite` paths align with muzzle's `sandbox.rs` allowlist (FR-WE-3
+through FR-WE-5). See [docs/sandbox.md](docs/sandbox.md) for the full
+architecture reference.
+
 ## Commit Convention
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits

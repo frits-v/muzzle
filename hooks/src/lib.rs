@@ -21,11 +21,17 @@ pub mod session;
 pub mod worktree;
 
 /// Format a WORKTREE_MISSING denial message for lazy worktree creation.
+///
+/// The message serves two purposes:
+/// 1. Prescriptive action: tells the agent to run ensure-worktree
+/// 2. Explicit prohibition: names common bypass vectors to prevent rationalization
 pub fn worktree_missing_msg(repo: &str) -> String {
     let bin = config::bin_dir().join("ensure-worktree");
     format!(
         "WORKTREE_MISSING:{repo} \
-         — Run: {} {repo}",
+         — Run: {} {repo}\n\
+         DO NOT use Bash (sed -i, cp, mv, perl -i, dd, patch, etc.) to bypass this check. \
+         All file writes to the main checkout are forbidden during worktree sessions.",
         bin.display()
     )
 }
@@ -52,6 +58,8 @@ mod tests {
             !msg.contains(".claude/hooks/bin"),
             "should not contain hardcoded relative path: {msg}"
         );
+        assert!(msg.contains("DO NOT use Bash"));
+        assert!(msg.contains("sed -i, cp, mv"));
     }
 
     #[test]
@@ -73,6 +81,20 @@ mod tests {
         assert!(
             msg.contains("/opt/muzzle/bin/ensure-worktree acme-api"),
             "should use MUZZLE_BIN_DIR: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_worktree_missing_msg_bypass_prohibition() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let msg = worktree_missing_msg("web-app");
+        assert!(
+            msg.contains("forbidden"),
+            "message must explicitly prohibit bypass"
+        );
+        assert!(
+            msg.contains("DO NOT"),
+            "message must use prescriptive language"
         );
     }
 }

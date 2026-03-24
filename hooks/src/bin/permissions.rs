@@ -195,7 +195,11 @@ fn check_bash(input: &HookInput) -> Decision {
     let write_paths = gitcheck::check_bash_write_paths(&bi.command);
     for wp in &write_paths {
         let is_git_c = wp.starts_with("gitc:");
-        let actual_path = wp.strip_prefix("gitc:").unwrap_or(wp);
+        let is_rel = wp.starts_with("rel:");
+        let actual_path = wp
+            .strip_prefix("gitc:")
+            .or_else(|| wp.strip_prefix("rel:"))
+            .unwrap_or(wp);
 
         if is_git_c {
             // git -C is a working directory, not a write target.
@@ -207,6 +211,41 @@ fn check_bash(input: &HookInput) -> Decision {
                     actual_path
                 ));
             }
+            continue;
+        }
+
+        if is_rel {
+            // Relative path from a file-mutating command (sed -i, cp, mv, etc.).
+            // When worktrees are active, resolve against CWD (main checkout) and
+            // run through sandbox checks so allowlisted paths (.agents/, .claude-tmp/)
+            // are permitted while other main-checkout writes are blocked.
+            if sess.has_session() && sess.worktree_active {
+                // Resolve relative path against CWD to get an absolute path
+                if let Ok(cwd) = std::env::current_dir() {
+                    let resolved = cwd.join(actual_path);
+                    let resolved_str = resolved.to_string_lossy();
+                    let result = sandbox::check_path_with_context(
+                        &resolved_str,
+                        Some(&sess),
+                        sandbox::ToolContext::Bash,
+                    );
+                    match result {
+                        sandbox::PathDecision::Deny(reason) => return Decision::Deny(reason),
+                        sandbox::PathDecision::Ask(reason) => return Decision::Ask(reason),
+                        sandbox::PathDecision::Allow => {}
+                    }
+                } else {
+                    // Can't resolve CWD — deny to be safe
+                    return Decision::Deny(format!(
+                        "BLOCKED: File-mutating Bash command targets main checkout \
+                         path '{}'. {}",
+                        actual_path,
+                        muzzle::worktree_missing_msg("(detected from Bash)")
+                    ));
+                }
+                continue;
+            }
+            // No worktree active — can't resolve relative path, allow through
             continue;
         }
 
