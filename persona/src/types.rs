@@ -31,6 +31,9 @@ pub fn expertise_for_role(role: &str) -> &'static [&'static str] {
 /// Normalize a role string against the vocabulary.
 /// Exact match first, then prefix match (shortest wins), fallback "general".
 pub fn normalize_role(input: &str) -> &'static str {
+    if input.is_empty() {
+        return "general";
+    }
     if let Some(&role) = ROLE_VOCABULARY.iter().find(|&&r| r == input) {
         return role;
     }
@@ -90,4 +93,42 @@ pub struct FeedbackEntry {
     pub observation: String,
     pub source: String,
     pub compacted: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_exact_match() {
+        assert_eq!(normalize_role("code-reviewer"), "code-reviewer");
+        assert_eq!(normalize_role("security-review"), "security-review");
+        assert_eq!(normalize_role("general"), "general");
+    }
+
+    #[test]
+    fn normalize_prefix_match() {
+        assert_eq!(normalize_role("code"), "code-reviewer");
+        assert_eq!(normalize_role("security"), "security-review");
+        assert_eq!(normalize_role("research"), "researcher");
+        assert_eq!(normalize_role("debug"), "debugging");
+    }
+
+    #[test]
+    fn normalize_unknown_falls_back_to_general() {
+        assert_eq!(normalize_role("astrology"), "general");
+        assert_eq!(normalize_role(""), "general");
+    }
+
+    #[test]
+    fn expertise_for_known_roles() {
+        assert!(!expertise_for_role("security-review").is_empty());
+        assert!(expertise_for_role("security-review").contains(&"security"));
+    }
+
+    #[test]
+    fn expertise_for_general_roles_is_empty() {
+        assert!(expertise_for_role("code-reviewer").is_empty());
+        assert!(expertise_for_role("general").is_empty());
+    }
 }
