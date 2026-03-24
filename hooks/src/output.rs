@@ -22,6 +22,9 @@ pub struct HookSpecificOutput {
     /// Human-readable reason for deny/ask decisions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_decision_reason: Option<String>,
+    /// Modified tool input parameters (for AllowWithUpdatedInput decisions).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_input: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// Permission decision enum for internal use.
@@ -33,6 +36,8 @@ pub enum Decision {
     Deny(String),
     /// Prompt the user for confirmation with a reason message.
     Ask(String),
+    /// Permit the tool call and modify its input parameters.
+    AllowWithUpdatedInput(serde_json::Map<String, serde_json::Value>),
 }
 
 impl Decision {
@@ -44,6 +49,7 @@ impl Decision {
                     hook_event_name: "PreToolUse".into(),
                     permission_decision: "allow".into(),
                     permission_decision_reason: None,
+                    updated_input: None,
                 }),
             },
             Decision::Deny(reason) => HookResponse {
@@ -51,6 +57,7 @@ impl Decision {
                     hook_event_name: "PreToolUse".into(),
                     permission_decision: "deny".into(),
                     permission_decision_reason: Some(reason.clone()),
+                    updated_input: None,
                 }),
             },
             Decision::Ask(reason) => HookResponse {
@@ -58,6 +65,15 @@ impl Decision {
                     hook_event_name: "PreToolUse".into(),
                     permission_decision: "ask".into(),
                     permission_decision_reason: Some(reason.clone()),
+                    updated_input: None,
+                }),
+            },
+            Decision::AllowWithUpdatedInput(updated) => HookResponse {
+                hook_specific_output: Some(HookSpecificOutput {
+                    hook_event_name: "PreToolUse".into(),
+                    permission_decision: "allow".into(),
+                    permission_decision_reason: None,
+                    updated_input: Some(updated.clone()),
                 }),
             },
         };
@@ -107,6 +123,20 @@ mod tests {
         let output = &parsed["hookSpecificOutput"];
         assert_eq!(output["permissionDecision"], "ask");
         assert_eq!(output["permissionDecisionReason"], "confirm this");
+    }
+
+    #[test]
+    fn test_allow_with_updated_input() {
+        let mut updated = serde_json::Map::new();
+        updated.insert(
+            "prompt".into(),
+            serde_json::Value::String("modified prompt".into()),
+        );
+        let json = Decision::AllowWithUpdatedInput(updated).to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("invalid JSON");
+        let output = &parsed["hookSpecificOutput"];
+        assert_eq!(output["permissionDecision"], "allow");
+        assert_eq!(output["updatedInput"]["prompt"], "modified prompt");
     }
 
     #[test]
