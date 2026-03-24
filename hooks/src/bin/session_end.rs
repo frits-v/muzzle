@@ -62,6 +62,14 @@ fn run() {
 
     // Clean empty .worktrees/ dirs
     clean_empty_worktree_dirs();
+
+    // Release persona locks for this session (best-effort)
+    let persona_bin = config::bin_dir().join("muzzle-persona");
+    if persona_bin.exists() {
+        let _ = std::process::Command::new(&persona_bin)
+            .args(["release", &format!("--session={}", sess.id)])
+            .output();
+    }
 }
 
 fn remove_worktrees(sess: &session::State) {
