@@ -30,12 +30,6 @@ struct BashInput {
 }
 
 #[derive(Deserialize, Default)]
-struct BashSandboxInput {
-    #[serde(default, rename = "dangerouslyDisableSandbox")]
-    disable_sandbox: bool,
-}
-
-#[derive(Deserialize, Default)]
 struct FileInput {
     #[serde(default)]
     file_path: String,
@@ -153,16 +147,21 @@ fn check_filesystem(input: &HookInput) -> Decision {
 
 fn check_bash(input: &HookInput) -> Decision {
     // FR-SB-NOSANDBOXDISABLE: Block sandbox escape attempts.
-    // Deserialized independently so a malformed flag value cannot poison
-    // the command field (which would short-circuit to Allow on empty string).
-    let sandbox: BashSandboxInput =
-        serde_json::from_value(input.tool_input.clone()).unwrap_or_default();
-    if sandbox.disable_sandbox {
-        return Decision::Deny(
-            "BLOCKED: dangerouslyDisableSandbox is not allowed — \
-             add required paths to the sandbox allowlist instead"
-                .into(),
-        );
+    // Inspects the raw JSON value before any serde deserialization so a
+    // malformed flag (null, string, number) cannot slip through via
+    // unwrap_or_default(). Only absent or explicit `false` is allowed.
+    if let Some(val) = input
+        .tool_input
+        .as_object()
+        .and_then(|obj| obj.get("dangerouslyDisableSandbox"))
+    {
+        if *val != serde_json::Value::Bool(false) {
+            return Decision::Deny(
+                "BLOCKED: dangerouslyDisableSandbox is not allowed — \
+                 add required paths to the sandbox allowlist instead"
+                    .into(),
+            );
+        }
     }
 
     let bi: BashInput = serde_json::from_value(input.tool_input.clone()).unwrap_or_default();
