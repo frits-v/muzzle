@@ -198,8 +198,7 @@ fn test_permissions_sandbox_disable_false_allows() {
 fn test_permissions_sandbox_disable_null_denies() {
     // A non-boolean value (null) for dangerouslyDisableSandbox must be denied.
     // Only explicit false or absent is safe — anything else means deny.
-    let input =
-        r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":null}}"#;
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":null}}"#;
     let (stdout, _stderr, code) = run_binary("permissions", input);
     assert_eq!(code, 0);
     let v: serde_json::Value =
@@ -214,8 +213,7 @@ fn test_permissions_sandbox_disable_null_denies() {
 #[test]
 fn test_permissions_sandbox_disable_string_denies() {
     // A string value for dangerouslyDisableSandbox must also be denied.
-    let input =
-        r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":"true"}}"#;
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":"true"}}"#;
     let (stdout, _stderr, code) = run_binary("permissions", input);
     assert_eq!(code, 0);
     let v: serde_json::Value =
