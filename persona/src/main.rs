@@ -84,6 +84,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Some("orphan-cleanup") => {
+            if let Err(e) = run_orphan_cleanup() {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
         Some(cmd) => {
             eprintln!("error: unknown subcommand '{cmd}'");
             std::process::exit(1);
@@ -654,6 +660,26 @@ fn now_iso8601() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     format!("{y:04}-{m:02}-{d:02}T{hours:02}:{mins:02}:{s:02}Z")
+}
+
+// ---------------------------------------------------------------------------
+// orphan-cleanup subcommand
+// ---------------------------------------------------------------------------
+
+fn run_orphan_cleanup() -> Result<(), String> {
+    let conn = open_db()?;
+
+    let cleared = conn
+        .execute(
+            "UPDATE personas SET assigned_to_session = NULL
+             WHERE assigned_to_session IS NOT NULL
+               AND last_assigned < datetime('now', '-24 hours')",
+            [],
+        )
+        .map_err(|e| format!("update error: {e}"))?;
+
+    println!("cleared {cleared} orphaned lock(s)");
+    Ok(())
 }
 
 /// Parse ISO 8601 date to days since Unix epoch (mirrored from broker).
