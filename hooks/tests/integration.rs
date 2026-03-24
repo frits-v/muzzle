@@ -185,9 +185,29 @@ fn test_permissions_sandbox_disable_false_allows() {
     let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":false}}"#;
     let (stdout, _stderr, code) = run_binary("permissions", input);
     assert_eq!(code, 0);
-    assert!(
-        stdout.contains("allow"),
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("permissions output should be JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "allow",
         "dangerouslyDisableSandbox=false should be allowed, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_permissions_sandbox_disable_malformed_denies_not_bypass() {
+    // A non-boolean dangerouslyDisableSandbox (e.g. null) must not bypass the command check.
+    // With independent deserialization, the sandbox flag defaults to false but the command
+    // still deserializes correctly and goes through normal safety checks.
+    let input =
+        r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":null}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("permissions output should be JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "allow",
+        "malformed flag with safe command should allow, got: {}",
         stdout
     );
 }
