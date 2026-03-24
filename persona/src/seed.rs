@@ -37,7 +37,7 @@ pub struct SeedPersona {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn now_iso8601() -> String {
+pub(crate) fn now_iso8601() -> String {
     let dur = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -138,7 +138,11 @@ mod tests {
         ensure_schema(&conn).unwrap();
         let seed = parse_seed(SEED_TOML).unwrap();
         let count = insert_seed(&conn, &seed).unwrap();
-        assert_eq!(count, seed.personas.len(), "all personas should be inserted");
+        assert_eq!(
+            count,
+            seed.personas.len(),
+            "all personas should be inserted"
+        );
     }
 
     #[test]
