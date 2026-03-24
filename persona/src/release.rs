@@ -266,6 +266,7 @@ mod tests {
             "session-release-1",
             "w1",
             None,
+            None,
         )
         .unwrap();
         let pid = assignments[0].persona_id;

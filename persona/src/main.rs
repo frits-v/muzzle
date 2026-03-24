@@ -1,3 +1,4 @@
+use muzzle_persona::seed::now_iso8601;
 use muzzle_persona::{broker, grow, preamble, release, schema, seed};
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -150,6 +151,7 @@ fn run_assign(args: &[String]) -> Result<(), String> {
     let session_id = parse_arg(args, "session").ok_or("--session=<id> is required")?;
     let agent_name = parse_arg(args, "agent-name").ok_or("--agent-name=<name> is required")?;
     let summon = parse_arg(args, "summon");
+    let team_name = parse_arg(args, "team-name");
 
     // 2. Open (or create) the DB.
     let path = db_path()?;
@@ -186,6 +188,7 @@ fn run_assign(args: &[String]) -> Result<(), String> {
         &session_id,
         &agent_name,
         summon.as_deref(),
+        team_name.as_deref(),
     )
     .map_err(|e| format!("assign error: {e}"))?;
 
@@ -636,30 +639,6 @@ fn run_search(args: &[String]) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-/// Return current time as ISO 8601 string (mirrors seed::now_iso8601, which is pub(crate)).
-fn now_iso8601() -> String {
-    let dur = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = dur.as_secs();
-    let days = secs / 86400;
-    let day_secs = secs % 86400;
-    let hours = day_secs / 3600;
-    let mins = (day_secs % 3600) / 60;
-    let s = day_secs % 60;
-    let z = days as i64 + 719_468;
-    let era = z / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}T{hours:02}:{mins:02}:{s:02}Z")
 }
 
 // ---------------------------------------------------------------------------

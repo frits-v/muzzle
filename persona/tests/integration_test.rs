@@ -16,6 +16,7 @@ fn full_lifecycle() {
         "sess-e2e",
         "w1",
         None,
+        None,
     )
     .unwrap();
     assert_eq!(assignments.len(), 2);
@@ -92,7 +93,8 @@ fn assign_triggers_auto_grow_when_pool_exhausted() {
     }
 
     let assignments =
-        muzzle_persona::broker::assign(&conn, &roles, "acme-api", "sess-grow", "w1", None).unwrap();
+        muzzle_persona::broker::assign(&conn, &roles, "acme-api", "sess-grow", "w1", None, None)
+            .unwrap();
     assert_eq!(assignments.len(), roles.len());
 
     // Verify auto-grow happened

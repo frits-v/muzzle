@@ -127,6 +127,12 @@ fn check_agent(input: &HookInput) -> Decision {
         .unwrap_or("unknown")
         .to_string();
 
+    let team_name = input
+        .tool_input
+        .get("team_name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let role = infer_role(&input.tool_input);
 
     let sess = session::resolve_readonly();
@@ -141,14 +147,19 @@ fn check_agent(input: &HookInput) -> Decision {
     let persona_bin = muzzle::config::bin_dir().join("muzzle-persona");
     let roles_json = format!("[\"{role}\"]");
 
+    let mut cmd_args = vec![
+        "assign".to_string(),
+        format!("--roles={roles_json}"),
+        format!("--project={project}"),
+        format!("--session={session_id}"),
+        format!("--agent-name={agent_name}"),
+    ];
+    if let Some(ref tn) = team_name {
+        cmd_args.push(format!("--team-name={tn}"));
+    }
+
     let output = std::process::Command::new(&persona_bin)
-        .args([
-            "assign",
-            &format!("--roles={roles_json}"),
-            &format!("--project={project}"),
-            &format!("--session={session_id}"),
-            &format!("--agent-name={agent_name}"),
-        ])
+        .args(&cmd_args)
         .output();
 
     let output = match output {

@@ -37,7 +37,7 @@ pub struct SeedPersona {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn now_iso8601() -> String {
+pub fn now_iso8601() -> String {
     let dur = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

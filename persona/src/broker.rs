@@ -118,38 +118,43 @@ fn load_available_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
             let affinity_scores_json: String = row.get(5)?;
             let last_assigned: Option<String> = row.get(6)?;
 
-            let traits: Vec<String> = serde_json::from_str(&traits_json).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    2,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })?;
-            let expertise: Vec<String> = serde_json::from_str(&expertise_json).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    3,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })?;
+            // Parse JSON fields; return Ok(None) on corruption so callers can skip.
+            let traits: Vec<String> = match serde_json::from_str(&traits_json) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("persona {id} ({name}): corrupted traits JSON, skipping: {e}");
+                    return Ok(None);
+                }
+            };
+            let expertise: Vec<String> = match serde_json::from_str(&expertise_json) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("persona {id} ({name}): corrupted expertise JSON, skipping: {e}");
+                    return Ok(None);
+                }
+            };
             let role_instructions: HashMap<String, String> =
-                serde_json::from_str(&role_instructions_json).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?;
-            let affinity_scores: HashMap<String, f32> = serde_json::from_str(&affinity_scores_json)
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?;
+                match serde_json::from_str(&role_instructions_json) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!(
+                            "persona {id} ({name}): corrupted role_instructions JSON, skipping: {e}"
+                        );
+                        return Ok(None);
+                    }
+                };
+            let affinity_scores: HashMap<String, f32> =
+                match serde_json::from_str(&affinity_scores_json) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!(
+                            "persona {id} ({name}): corrupted affinity_scores JSON, skipping: {e}"
+                        );
+                        return Ok(None);
+                    }
+                };
 
-            Ok(Candidate {
+            Ok(Some(Candidate {
                 id,
                 name,
                 traits,
@@ -157,9 +162,10 @@ fn load_available_candidates(conn: &Connection) -> Result<Vec<Candidate>> {
                 role_instructions,
                 affinity_scores,
                 last_assigned,
-            })
+            }))
         })?
-        .collect::<Result<Vec<_>>>()?;
+        .filter_map(|r| r.ok().flatten())
+        .collect();
 
     Ok(candidates)
 }
@@ -178,6 +184,7 @@ pub fn assign(
     session_id: &str,
     agent_name: &str,
     summon: Option<&str>,
+    team_name: Option<&str>,
 ) -> Result<Vec<Assignment>> {
     // 1. Normalize roles.
     let normalized_roles: Vec<&str> = roles.iter().map(|r| normalize_role(r)).collect();
@@ -192,6 +199,7 @@ pub fn assign(
         session_id,
         agent_name,
         summon,
+        team_name,
     );
 
     match result {
@@ -213,6 +221,7 @@ fn assign_inner(
     session_id: &str,
     agent_name: &str,
     summon: Option<&str>,
+    team_name: Option<&str>,
 ) -> Result<Vec<Assignment>> {
     let now = now_iso8601();
 
@@ -345,10 +354,30 @@ fn assign_inner(
 
         // 10. INSERT into persona_assignments.
         conn.execute(
-            "INSERT INTO persona_assignments (persona_id, session_id, project, role, agent_name, assigned_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![picked.id, session_id, project, role, agent_name, now],
+            "INSERT INTO persona_assignments (persona_id, session_id, project, role, team_name, agent_name, assigned_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![picked.id, session_id, project, role, team_name, agent_name, now],
         )?;
+
+        // 11. Query last 3 prior assignments for this persona (before this one).
+        let recent_work: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT role, project, assigned_at FROM persona_assignments
+                 WHERE persona_id = ?1 AND session_id != ?2
+                 ORDER BY assigned_at DESC LIMIT 3",
+            )?;
+            let rows: Vec<String> = stmt
+                .query_map(rusqlite::params![picked.id, session_id], |row| {
+                    let r: String = row.get(0)?;
+                    let p: String = row.get(1)?;
+                    let ts: String = row.get(2)?;
+                    let date = ts.get(..10).unwrap_or(&ts).to_string();
+                    Ok(format!("{r} on {p} ({date})"))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+            rows
+        };
 
         let role_instructions = picked
             .role_instructions
@@ -363,6 +392,7 @@ fn assign_inner(
             traits: picked.traits,
             expertise: picked.expertise,
             role_instructions,
+            recent_work,
         });
     }
 
@@ -458,6 +488,7 @@ mod tests {
             "session-001",
             "worker-1",
             None,
+            None,
         )
         .unwrap();
         assert_eq!(assignments.len(), 1);
@@ -474,6 +505,7 @@ mod tests {
             "test-project",
             "session-002",
             "worker",
+            None,
             None,
         )
         .unwrap();
@@ -492,6 +524,7 @@ mod tests {
             "test-project",
             "session-003",
             "worker-1",
+            None,
             None,
         )
         .unwrap();
@@ -516,9 +549,34 @@ mod tests {
             "session-004",
             "worker-1",
             Some("Elena Vasquez"),
+            None,
         )
         .unwrap();
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].name, "Elena Vasquez");
+    }
+
+    #[test]
+    fn assign_persists_team_name() {
+        let conn = setup_db();
+        let assignments = assign(
+            &conn,
+            &["code-reviewer"],
+            "test-project",
+            "session-005",
+            "worker-1",
+            None,
+            Some("alpha-team"),
+        )
+        .unwrap();
+        let pid = assignments[0].persona_id;
+        let stored_team: Option<String> = conn
+            .query_row(
+                "SELECT team_name FROM persona_assignments WHERE persona_id = ?1 AND session_id = 'session-005'",
+                [pid],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_team.as_deref(), Some("alpha-team"));
     }
 }

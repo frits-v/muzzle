@@ -81,6 +81,8 @@ pub struct Assignment {
     pub traits: Vec<String>,
     pub expertise: Vec<String>,
     pub role_instructions: String,
+    /// Last 3 prior assignments, each pre-formatted as e.g. "code-reviewer on Hermosa (2026-03-19)".
+    pub recent_work: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
