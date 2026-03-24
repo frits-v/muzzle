@@ -4,6 +4,7 @@
 //! no scan fallback (AR-4), per-invocation caching (FR-SI-5).
 
 use crate::config;
+use crate::vcs::VcsKind;
 use std::cell::RefCell;
 use std::fs;
 use std::io;
@@ -49,6 +50,8 @@ pub struct State {
     pub changelog_path: PathBuf,
     /// True if this session has at least one worktree registered.
     pub worktree_active: bool,
+    /// VCS backend type detected for this session's primary workspace.
+    pub vcs_kind: VcsKind,
     /// True once resolution has completed (even if no session was found).
     pub resolved: bool,
 }
@@ -63,6 +66,7 @@ impl State {
             spec_file: PathBuf::new(),
             changelog_path: PathBuf::new(),
             worktree_active: false,
+            vcs_kind: VcsKind::Git,
             resolved: true,
         }
     }
@@ -70,6 +74,10 @@ impl State {
     /// Create a fully populated state from a session ID.
     pub fn from_id(session_id: &str) -> Self {
         let worktree_active = spec_file_has_content(&config::spec_file_path(session_id));
+        let vcs_kind = match read_spec_file(&config::spec_file_path(session_id)) {
+            Ok(entries) if !entries.is_empty() => entries[0].vcs_kind,
+            _ => VcsKind::Git,
+        };
         Self {
             id: session_id.to_string(),
             short_id: config::short_id(session_id),
@@ -77,6 +85,7 @@ impl State {
             spec_file: config::spec_file_path(session_id),
             changelog_path: config::changelog_path(session_id),
             worktree_active,
+            vcs_kind,
             resolved: true,
         }
     }
@@ -221,6 +230,8 @@ pub struct SpecEntry {
     pub wt_path: String,
     /// Absolute path to the original repo root.
     pub repo_path: String,
+    /// VCS backend type for this workspace entry.
+    pub vcs_kind: VcsKind,
 }
 
 /// Read and parse the worktree spec file.
@@ -233,16 +244,27 @@ pub fn read_spec_file(path: &Path) -> Result<Vec<SpecEntry>, SessionError> {
         if line.is_empty() {
             continue;
         }
-        let parts: Vec<&str> = line.splitn(4, '|').collect();
-        if parts.len() != 4 {
-            continue;
+        let parts: Vec<&str> = line.splitn(5, '|').collect();
+        match parts.len() {
+            4 => entries.push(SpecEntry {
+                repo: parts[0].to_string(),
+                branch: parts[1].to_string(),
+                wt_path: parts[2].to_string(),
+                repo_path: parts[3].to_string(),
+                vcs_kind: VcsKind::Git, // backward compat
+            }),
+            5 => {
+                let vcs_kind = parts[4].parse::<VcsKind>().unwrap_or_default();
+                entries.push(SpecEntry {
+                    repo: parts[0].to_string(),
+                    branch: parts[1].to_string(),
+                    wt_path: parts[2].to_string(),
+                    repo_path: parts[3].to_string(),
+                    vcs_kind,
+                });
+            }
+            _ => continue,
         }
-        entries.push(SpecEntry {
-            repo: parts[0].to_string(),
-            branch: parts[1].to_string(),
-            wt_path: parts[2].to_string(),
-            repo_path: parts[3].to_string(),
-        });
     }
     Ok(entries)
 }
@@ -251,7 +273,12 @@ pub fn read_spec_file(path: &Path) -> Result<Vec<SpecEntry>, SessionError> {
 pub fn write_spec_file(path: &Path, entries: &[SpecEntry]) -> Result<(), SessionError> {
     let content: String = entries
         .iter()
-        .map(|e| format!("{}|{}|{}|{}", e.repo, e.branch, e.wt_path, e.repo_path))
+        .map(|e| {
+            format!(
+                "{}|{}|{}|{}|{}",
+                e.repo, e.branch, e.wt_path, e.repo_path, e.vcs_kind
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
@@ -467,12 +494,14 @@ mod tests {
                 branch: "wt/abc12345".into(),
                 wt_path: "/path/to/wt".into(),
                 repo_path: "/path/to/repo".into(),
+                vcs_kind: VcsKind::Git,
             },
             SpecEntry {
                 repo: "api-server".into(),
                 branch: "feature/test".into(),
                 wt_path: "/path/to/wt2".into(),
                 repo_path: "/path/to/repo2".into(),
+                vcs_kind: VcsKind::Git,
             },
         ];
 
@@ -500,6 +529,7 @@ mod tests {
             branch: "wt/abc12345".into(),
             wt_path: "/path/to/ops/wt".into(),
             repo_path: "/path/to/ops".into(),
+            vcs_kind: VcsKind::Git,
         };
 
         append_spec_entry(&spec_path, &entry).expect("append to empty failed");
@@ -525,6 +555,7 @@ mod tests {
             branch: "wt/abc12345".into(),
             wt_path: "/path/to/web-app/wt".into(),
             repo_path: "/path/to/web-app".into(),
+            vcs_kind: VcsKind::Git,
         }];
         write_spec_file(&spec_path, &entries).expect("initial write failed");
 
@@ -534,6 +565,7 @@ mod tests {
             branch: "wt/abc12345".into(),
             wt_path: "/path/to/ops/wt".into(),
             repo_path: "/path/to/ops".into(),
+            vcs_kind: VcsKind::Git,
         };
         append_spec_entry(&spec_path, &new_entry).expect("append failed");
 
@@ -558,6 +590,7 @@ mod tests {
             branch: "wt/abc12345".into(),
             wt_path: "/path/to/ops/wt".into(),
             repo_path: "/path/to/ops".into(),
+            vcs_kind: VcsKind::Git,
         };
 
         append_spec_entry(&spec_path, &entry).expect("first append failed");
@@ -810,5 +843,80 @@ mod tests {
         assert_eq!(data, "test-register-session");
 
         reset_cache();
+    }
+
+    #[test]
+    fn test_spec_entry_5_field_roundtrip() {
+        let tmp = std::env::temp_dir().join("muzzle-test-spec-5field");
+        let _ = fs::create_dir_all(&tmp);
+        let spec_path = tmp.join("roundtrip.env");
+
+        let entries = vec![
+            SpecEntry {
+                repo: "acme-api".into(),
+                branch: "wt/abc12345".into(),
+                wt_path: "/path/to/wt".into(),
+                repo_path: "/path/to/repo".into(),
+                vcs_kind: VcsKind::Git,
+            },
+            SpecEntry {
+                repo: "web-app".into(),
+                branch: "wt/def67890".into(),
+                wt_path: "/path/to/wt2".into(),
+                repo_path: "/path/to/repo2".into(),
+                vcs_kind: VcsKind::Jj,
+            },
+            SpecEntry {
+                repo: "infra".into(),
+                branch: "wt/ghi11111".into(),
+                wt_path: "/path/to/wt3".into(),
+                repo_path: "/path/to/repo3".into(),
+                vcs_kind: VcsKind::JjColocated,
+            },
+        ];
+
+        write_spec_file(&spec_path, &entries).expect("write failed");
+        let read_entries = read_spec_file(&spec_path).expect("read failed");
+
+        assert_eq!(read_entries.len(), 3);
+        assert_eq!(read_entries[0].vcs_kind, VcsKind::Git);
+        assert_eq!(read_entries[1].vcs_kind, VcsKind::Jj);
+        assert_eq!(read_entries[2].vcs_kind, VcsKind::JjColocated);
+        assert_eq!(read_entries[0].repo, "acme-api");
+        assert_eq!(read_entries[1].repo, "web-app");
+        assert_eq!(read_entries[2].repo, "infra");
+
+        let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn test_spec_entry_4_field_backward_compat() {
+        let tmp = std::env::temp_dir().join("muzzle-test-spec-4field");
+        let _ = fs::create_dir_all(&tmp);
+        let spec_path = tmp.join("legacy.env");
+
+        // Write legacy 4-field format manually (no vcs_kind column)
+        let content = "acme-api|main|/path/to/wt|/path/to/repo\n\
+                        web-app|develop|/path/to/wt2|/path/to/repo2\n";
+        fs::write(&spec_path, content).expect("write failed");
+
+        let entries = read_spec_file(&spec_path).expect("read failed");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].vcs_kind,
+            VcsKind::Git,
+            "legacy 4-field entry should default to Git"
+        );
+        assert_eq!(
+            entries[1].vcs_kind,
+            VcsKind::Git,
+            "legacy 4-field entry should default to Git"
+        );
+        assert_eq!(entries[0].repo, "acme-api");
+        assert_eq!(entries[1].repo, "web-app");
+
+        let _ = fs::remove_file(&spec_path);
+        let _ = fs::remove_dir(&tmp);
     }
 }

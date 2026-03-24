@@ -7,6 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use muzzle::config;
 use muzzle::session::{self, SpecEntry};
+use muzzle::vcs::VcsKind;
 use muzzle::worktree;
 use serde::Deserialize;
 use std::fs;
@@ -70,7 +71,17 @@ fn remove_worktrees(sess: &session::State) {
     };
 
     for entry in &entries {
-        let (dirty, err) = worktree::remove(entry);
+        let (dirty, err) = match entry.vcs_kind {
+            VcsKind::Jj | VcsKind::JjColocated => {
+                use muzzle::vcs::jj::JjBackend;
+                use muzzle::vcs::VcsBackend;
+                let jj = JjBackend {
+                    colocated: entry.vcs_kind == VcsKind::JjColocated,
+                };
+                jj.workspace_remove(entry, false)
+            }
+            VcsKind::Git => worktree::remove(entry),
+        };
         if dirty {
             muzzle::log::emit_full(
                 "WARN",

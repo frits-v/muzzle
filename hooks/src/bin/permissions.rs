@@ -13,6 +13,7 @@ use muzzle::mcp;
 use muzzle::output::Decision;
 use muzzle::sandbox;
 use muzzle::session;
+use muzzle::vcs::VcsKind;
 use serde::Deserialize;
 use std::io::{self, Read};
 
@@ -170,42 +171,89 @@ fn check_bash(input: &HookInput) -> Decision {
         return Decision::Allow;
     }
 
-    // Git safety checks (FR-GS-1 through FR-GS-8)
-    match gitcheck::check_git_safety(&bi.command) {
+    // Resolve session once for all checks below
+    let sess = session::resolve_readonly();
+
+    // Build JjBackend once if needed (avoids repeated construction)
+    let jj_backend: Option<muzzle::vcs::jj::JjBackend> =
+        if matches!(sess.vcs_kind, VcsKind::Jj | VcsKind::JjColocated) {
+            Some(muzzle::vcs::jj::JjBackend {
+                colocated: sess.vcs_kind == VcsKind::JjColocated,
+            })
+        } else {
+            None
+        };
+
+    // VCS-aware safety checks (FR-GS-1 through FR-GS-8)
+    let safety_result = if let Some(ref jj) = jj_backend {
+        use muzzle::vcs::VcsBackend;
+        jj.check_safety(&bi.command)
+    } else {
+        gitcheck::check_git_safety(&bi.command)
+    };
+    match safety_result {
         gitcheck::GitResult::Block(reason) => return Decision::Deny(reason),
         gitcheck::GitResult::Ok => {}
     }
 
-    // gh merge checks
+    // gh merge checks (VCS-agnostic — gh CLI works the same regardless)
     let gh_result = gitcheck::check_gh_merge(&bi.command);
     if gh_result.should_ask {
         return Decision::Ask(gh_result.reason);
     }
 
     // Worktree enforcement
-    let sess = session::resolve_readonly();
     if sess.has_session() {
-        if let Some(reason) =
-            gitcheck::check_worktree_enforcement(&bi.command, sess.worktree_active, &sess.short_id)
-        {
+        if let Some(reason) = gitcheck::check_worktree_enforcement(
+            &bi.command,
+            sess.worktree_active,
+            &sess.short_id,
+            sess.vcs_kind,
+        ) {
             return Decision::Deny(reason);
+        }
+
+        // jj workspace enforcement
+        if let Some(ref jj) = jj_backend {
+            use muzzle::vcs::VcsBackend;
+            if let Some(reason) =
+                jj.check_workspace_enforcement(&bi.command, sess.worktree_active, &sess.short_id)
+            {
+                return Decision::Deny(reason);
+            }
         }
 
         // FR-WE-2: If session exists but no worktrees, return WORKTREE_MISSING
         // so the agent can lazily create a worktree via ensure-worktree.
-        if !sess.worktree_active
-            && bi.command.contains("git")
-            && gitcheck::is_repo_git_op(&bi.command)
-            && !gitcheck::is_worktree_management_op(&bi.command)
-        {
-            if let Some(repo) = gitcheck::extract_repo_from_git_op(&bi.command) {
-                return Decision::Deny(muzzle::worktree_missing_msg(&repo));
+        if !sess.worktree_active {
+            let is_repo_op = if let Some(ref jj) = jj_backend {
+                use muzzle::vcs::VcsBackend;
+                (bi.command.contains("jj") && !jj.is_workspace_management_op(&bi.command))
+                    || (bi.command.contains("git")
+                        && gitcheck::is_repo_git_op(&bi.command)
+                        && !gitcheck::is_worktree_management_op(&bi.command))
+            } else {
+                bi.command.contains("git")
+                    && gitcheck::is_repo_git_op(&bi.command)
+                    && !gitcheck::is_worktree_management_op(&bi.command)
+            };
+            if is_repo_op {
+                let repo = if let Some(ref jj) = jj_backend {
+                    use muzzle::vcs::VcsBackend;
+                    jj.extract_repo_from_op(&bi.command)
+                        .or_else(|| gitcheck::extract_repo_from_git_op(&bi.command))
+                } else {
+                    gitcheck::extract_repo_from_git_op(&bi.command)
+                };
+                if let Some(repo) = repo {
+                    return Decision::Deny(muzzle::worktree_missing_msg(&repo, sess.vcs_kind));
+                }
+                return Decision::Deny(
+                    "BLOCKED: No worktree for this session. \
+                     Cannot determine target repo from command."
+                        .into(),
+                );
             }
-            return Decision::Deny(
-                "BLOCKED: No worktree for this session. \
-                 Cannot determine target repo from command."
-                    .into(),
-            );
         }
     }
 

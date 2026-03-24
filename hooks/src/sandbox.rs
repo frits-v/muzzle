@@ -118,7 +118,8 @@ pub fn check_path_with_context(
             if sess.worktree_active {
                 // Worktrees are active — strict sandbox mode
 
-                // FR-WE-3: Allow writes to worktree paths
+                // FR-WE-3: Allow writes to worktree paths.
+                // Both git and jj backends use .worktrees/ for workspace isolation.
                 if resolved.contains("/.worktrees/") {
                     // But redirect .agents/ writes back to main checkout for persistence.
                     // E.g. <repo>/.worktrees/<id>/.agents/foo.md → <repo>/.agents/foo.md
@@ -160,7 +161,10 @@ pub fn check_path_with_context(
                     let repo = extract_repo(&resolved, ws_str);
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, sess.short_id);
                     if !repo.is_empty() && !Path::new(&wt_dir).exists() {
-                        return PathDecision::Deny(crate::worktree_missing_msg(&repo));
+                        return PathDecision::Deny(crate::worktree_missing_msg(
+                            &repo,
+                            sess.vcs_kind,
+                        ));
                     }
                     let rel = extract_rel_path(&resolved, &repo, ws_str);
                     return PathDecision::Deny(format!(
@@ -187,7 +191,10 @@ pub fn check_path_with_context(
                     // FR-WE-2: Return WORKTREE_MISSING with repo name for lazy creation
                     let repo = extract_repo(&resolved, ws_str);
                     if !repo.is_empty() {
-                        return PathDecision::Deny(crate::worktree_missing_msg(&repo));
+                        return PathDecision::Deny(crate::worktree_missing_msg(
+                            &repo,
+                            sess.vcs_kind,
+                        ));
                     }
                     return PathDecision::Deny(
                         "BLOCKED: No worktree for this session. All repo writes are blocked to prevent editing the main checkout.".into(),
@@ -431,6 +438,7 @@ fn extract_rel_path(path: &str, repo: &str, ws: &str) -> String {
 mod tests {
     use super::*;
     use crate::config;
+    use crate::vcs::VcsKind;
     use crate::ENV_LOCK;
     use std::path::PathBuf;
 
@@ -442,6 +450,7 @@ mod tests {
             spec_file: config::spec_file_path("abc12345-test"),
             changelog_path: config::changelog_path("abc12345-test"),
             worktree_active: true,
+            vcs_kind: VcsKind::Git,
             resolved: true,
         }
     }
@@ -454,6 +463,7 @@ mod tests {
             spec_file: config::spec_file_path("abc12345-test"),
             changelog_path: config::changelog_path("abc12345-test"),
             worktree_active: false,
+            vcs_kind: VcsKind::Git,
             resolved: true,
         }
     }
@@ -466,6 +476,7 @@ mod tests {
             spec_file: PathBuf::new(),
             changelog_path: PathBuf::new(),
             worktree_active: false,
+            vcs_kind: VcsKind::Git,
             resolved: true,
         }
     }

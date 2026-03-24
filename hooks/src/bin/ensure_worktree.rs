@@ -12,6 +12,7 @@
 
 use muzzle::config;
 use muzzle::session;
+use muzzle::vcs::VcsKind;
 use muzzle::worktree;
 
 fn main() {
@@ -27,12 +28,18 @@ fn main() {
 
 fn run() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 || args[1].is_empty() {
-        muzzle::log::error("ensure-worktree", "Usage: ensure-worktree <repo-name>");
+    if args.len() < 2 || args[1].is_empty() {
+        muzzle::log::error(
+            "ensure-worktree",
+            "Usage: ensure-worktree <repo-name> [vcs-kind]",
+        );
         std::process::exit(1);
     }
 
     let repo = &args[1];
+
+    // Parse optional VCS kind from second argument (default: Git)
+    let vcs_kind: VcsKind = args.get(2).and_then(|s| s.parse().ok()).unwrap_or_default();
 
     // Validate all workspaces exist before attempting anything
     if let Err(msg) = config::validate_workspaces() {
@@ -65,19 +72,48 @@ fn run() {
         }
     }
 
-    // Create worktree
-    let entry = match worktree::ensure_for_repo(&sess, repo) {
-        Ok(entry) => entry,
-        Err(e) => {
-            muzzle::log::emit_full(
-                "ERROR",
-                "ensure-worktree",
-                &format!("failed to create worktree for {}", repo),
-                None,
-                Some(&e.to_string()),
-            );
-            std::process::exit(1);
+    // Create worktree — route through appropriate VCS backend
+    let entry = match vcs_kind {
+        VcsKind::Jj | VcsKind::JjColocated => {
+            use muzzle::vcs::jj::JjBackend;
+            use muzzle::vcs::VcsBackend;
+            let jj = JjBackend {
+                colocated: vcs_kind == VcsKind::JjColocated,
+            };
+            // Resolve repo path
+            let repo_path = match config::workspaces()
+                .iter()
+                .map(|ws| ws.join(repo))
+                .find(|p| p.is_dir())
+            {
+                Some(p) => p,
+                None => {
+                    muzzle::log::error("ensure-worktree", &format!("repo not found: {repo}"));
+                    std::process::exit(1);
+                }
+            };
+            let dest = config::worktree_path(&repo_path, &sess.short_id);
+            match jj.workspace_add(&repo_path, &dest, &sess.short_id, None, &sess.tmp_dir) {
+                Ok(entry) => entry,
+                Err(e) => {
+                    muzzle::log::error("ensure-worktree", &format!("jj workspace add failed: {e}"));
+                    std::process::exit(1);
+                }
+            }
         }
+        VcsKind::Git => match worktree::ensure_for_repo(&sess, repo) {
+            Ok(entry) => entry,
+            Err(e) => {
+                muzzle::log::emit_full(
+                    "ERROR",
+                    "ensure-worktree",
+                    &format!("failed to create worktree for {}", repo),
+                    None,
+                    Some(&e.to_string()),
+                );
+                std::process::exit(1);
+            }
+        },
     };
 
     // Update spec file

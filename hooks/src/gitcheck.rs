@@ -172,6 +172,7 @@ pub fn check_worktree_enforcement(
     cmd: &str,
     worktree_active: bool,
     short_id: &str,
+    vcs_kind: crate::vcs::VcsKind,
 ) -> Option<String> {
     if !worktree_active {
         return None;
@@ -201,7 +202,7 @@ pub fn check_worktree_enforcement(
                     let repo = extract_repo_name(git_path, &ws_str);
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
                     if !std::path::Path::new(&wt_dir).exists() {
-                        return Some(crate::worktree_missing_msg(&repo));
+                        return Some(crate::worktree_missing_msg(&repo, vcs_kind));
                     }
                     return Some(format!(
                         "BLOCKED: Git op on main checkout ({repo}). \
@@ -225,7 +226,7 @@ pub fn check_worktree_enforcement(
                     let repo = extract_repo_name(cd_path, &ws_str);
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, short_id);
                     if !std::path::Path::new(&wt_dir).exists() {
-                        return Some(crate::worktree_missing_msg(&repo));
+                        return Some(crate::worktree_missing_msg(&repo, vcs_kind));
                     }
                     return Some(format!(
                         "BLOCKED: Git op on main checkout ({repo}). \
@@ -596,7 +597,7 @@ mod tests {
         let fixed_ws = "/tmp/muzzle-test-ws";
         std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
         let cmd = format!("git -C {fixed_ws}/web-app status");
-        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345", crate::vcs::VcsKind::Git);
         std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(reason.is_some(), "expected deny for git on main checkout");
     }
@@ -607,7 +608,7 @@ mod tests {
         let fixed_ws = "/tmp/muzzle-test-ws";
         std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
         let cmd = format!("git -C {fixed_ws}/web-app/.worktrees/abc12345 status");
-        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345", crate::vcs::VcsKind::Git);
         std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(
             reason.is_none(),
@@ -622,7 +623,7 @@ mod tests {
         let fixed_ws = "/tmp/muzzle-test-ws";
         std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
         let cmd = format!("git -C {fixed_ws}/web-app worktree add /path");
-        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345", crate::vcs::VcsKind::Git);
         std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(
             reason.is_none(),
@@ -637,14 +638,19 @@ mod tests {
         let fixed_ws = "/tmp/muzzle-test-ws";
         std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
         let cmd = format!("git -C {fixed_ws}/web-app status");
-        let reason = check_worktree_enforcement(&cmd, false, "abc12345");
+        let reason = check_worktree_enforcement(&cmd, false, "abc12345", crate::vcs::VcsKind::Git);
         std::env::remove_var("MUZZLE_WORKSPACE");
         assert!(reason.is_none(), "expected no enforcement when inactive");
     }
 
     #[test]
     fn test_worktree_enforcement_bare_checkout() {
-        let reason = check_worktree_enforcement("git checkout feature-branch", true, "abc12345");
+        let reason = check_worktree_enforcement(
+            "git checkout feature-branch",
+            true,
+            "abc12345",
+            crate::vcs::VcsKind::Git,
+        );
         assert!(reason.is_some(), "expected deny for bare git checkout");
     }
 

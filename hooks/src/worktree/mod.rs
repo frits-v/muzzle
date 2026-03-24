@@ -8,6 +8,7 @@ pub mod git;
 
 use crate::config;
 use crate::session::{SpecEntry, State};
+use crate::vcs::VcsKind;
 use std::fs;
 use std::path::Path;
 
@@ -295,6 +296,7 @@ fn create_single_worktree(
         branch: actual_branch,
         wt_path: wt_path.to_string_lossy().to_string(),
         repo_path: repo_path.to_string_lossy().to_string(),
+        vcs_kind: VcsKind::Git,
     })
 }
 
@@ -334,6 +336,7 @@ pub fn ensure_for_repo(sess: &State, repo: &str) -> Result<SpecEntry, WorktreeEr
             branch,
             wt_path: wt_path.to_string_lossy().to_string(),
             repo_path: repo_path.to_string_lossy().to_string(),
+            vcs_kind: VcsKind::Git,
         });
     }
 
