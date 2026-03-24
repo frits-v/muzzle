@@ -164,6 +164,35 @@ fn test_permissions_force_push_denies() {
 }
 
 #[test]
+fn test_permissions_sandbox_disable_denies() {
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":true}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("deny"),
+        "dangerouslyDisableSandbox should be denied, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("dangerouslyDisableSandbox"),
+        "denial message should mention the flag, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_permissions_sandbox_disable_false_allows() {
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello","dangerouslyDisableSandbox":false}}"#;
+    let (stdout, _stderr, code) = run_binary("permissions", input);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("allow"),
+        "dangerouslyDisableSandbox=false should be allowed, got: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_permissions_safe_bash_allows() {
     let input = r#"{"tool_name":"Bash","tool_input":{"command":"echo hello"}}"#;
     let (stdout, _stderr, code) = run_binary("permissions", input);

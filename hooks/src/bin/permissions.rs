@@ -27,6 +27,8 @@ struct HookInput {
 struct BashInput {
     #[serde(default)]
     command: String,
+    #[serde(default, rename = "dangerouslyDisableSandbox")]
+    disable_sandbox: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -147,6 +149,17 @@ fn check_filesystem(input: &HookInput) -> Decision {
 
 fn check_bash(input: &HookInput) -> Decision {
     let bi: BashInput = serde_json::from_value(input.tool_input.clone()).unwrap_or_default();
+
+    // FR-SB-NOSANDBOXDISABLE: Block sandbox escape attempts.
+    // Claude Code's dangerouslyDisableSandbox parameter disables all filesystem
+    // and network sandboxing. The correct fix is to allowlist specific paths.
+    if bi.disable_sandbox {
+        return Decision::Deny(
+            "BLOCKED: dangerouslyDisableSandbox is not allowed — \
+             add required paths to the sandbox allowlist instead"
+                .into(),
+        );
+    }
 
     if bi.command.is_empty() {
         return Decision::Allow;
