@@ -1,4 +1,5 @@
 pub mod broker;
+pub mod grow;
 pub mod preamble;
 pub mod release;
 pub mod schema;

@@ -3,7 +3,8 @@
 use rusqlite::{Connection, Result};
 use std::collections::HashMap;
 
-use crate::seed::now_iso8601;
+use crate::grow;
+use crate::seed::{self, now_iso8601};
 use crate::types::{expertise_for_role, normalize_role, Assignment, PersonaStatus};
 
 // ---------------------------------------------------------------------------
@@ -330,10 +331,10 @@ fn assign_inner(
             if let Some(c) = summon_candidate.take() {
                 c
             } else {
-                pick_best(&mut pool, role)?
+                pick_or_grow(conn, &mut pool, role)?
             }
         } else {
-            pick_best(&mut pool, role)?
+            pick_or_grow(conn, &mut pool, role)?
         };
 
         // 9. UPDATE: lock persona to session.
@@ -366,6 +367,29 @@ fn assign_inner(
     }
 
     Ok(assignments)
+}
+
+/// Try to pick the best candidate; if the pool is exhausted, grow one new
+/// persona and retry.  Returns an error only when grow itself fails (name
+/// exhaustion).
+fn pick_or_grow(conn: &Connection, pool: &mut Vec<Candidate>, role: &str) -> Result<Candidate> {
+    if !pool.is_empty() {
+        return pick_best(pool, role);
+    }
+
+    // Pool is empty — grow one persona from the seed file, then reload the
+    // pool so the new persona is available.
+    let toml_str = include_str!("../personas-seed.toml");
+    let seed_file = seed::parse_seed(toml_str).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+    let mut rng = grow::Rng::from_time();
+    let grown = grow::grow(conn, &seed_file.meta, 1, &mut rng)?;
+    if grown == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+
+    // Reload candidates (including the freshly inserted persona) and pick.
+    *pool = load_available_candidates(conn)?;
+    pick_best(pool, role)
 }
 
 /// Pick the best candidate for `role` from `pool`, remove it, and return it.
