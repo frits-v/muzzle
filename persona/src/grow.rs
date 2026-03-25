@@ -101,10 +101,7 @@ fn pick_expertise_weighted(
             }
         }
         // Fallback: last non-excluded index.
-        (0..vocab.len())
-            .filter(|&i| Some(i) != exclude)
-            .next_back()
-            .unwrap_or(0)
+        (0..vocab.len()).rfind(|&i| Some(i) != exclude).unwrap_or(0)
     };
 
     // Always pick at least 1; pick 2 if vocab has at least 2 entries.
