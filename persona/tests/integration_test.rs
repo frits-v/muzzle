@@ -156,7 +156,7 @@ fn assign_triggers_auto_grow_when_pool_exhausted() {
 
     // Assign more roles than there are seed personas. The broker auto-grows on demand.
     let extra_roles = initial_count + 1;
-    let roles: Vec<&str> = std::iter::repeat("general").take(extra_roles).collect();
+    let roles: Vec<&str> = std::iter::repeat_n("general", extra_roles).collect();
 
     let assignments = broker::assign(
         &conn,
