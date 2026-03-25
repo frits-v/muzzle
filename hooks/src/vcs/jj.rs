@@ -31,6 +31,9 @@ static RE_JJ_WORKSPACE: LazyLock<Regex> =
 static RE_JJ_EDIT_IMMUTABLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bjj\s+edit\s+(root|trunk)\b").unwrap());
 
+/// Matches any `jj` command invocation (word-boundary safe).
+static RE_JJ_CMD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bjj\s+\w+").unwrap());
+
 /// Matches jj subcommands that are utility-only and don't operate on repo state.
 static RE_JJ_SAFE_SUBCOMMAND: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bjj\s+(version|help|config|init)\b").unwrap());
@@ -38,8 +41,19 @@ static RE_JJ_SAFE_SUBCOMMAND: LazyLock<Regex> =
 impl JjBackend {
     /// Check if a jj command operates on the repository (not just a utility command
     /// like `jj version` or `jj help`).
+    ///
+    /// Uses `RE_JJ_GIT_PUSH` word-boundary matching (`\bjj\b`) to avoid false
+    /// positives on unrelated commands containing "jj" as a substring (e.g.
+    /// `mkdir jj-workspace`).
     pub fn is_repo_op(cmd: &str) -> bool {
-        cmd.contains("jj") && !RE_JJ_SAFE_SUBCOMMAND.is_match(cmd)
+        // RE_JJ_GIT_PUSH and other jj regexes all use \bjj\b word boundaries.
+        // Use a simple word-boundary check here too.
+        RE_JJ_WORKSPACE.is_match(cmd)
+            || RE_JJ_GIT_PUSH.is_match(cmd)
+            || RE_JJ_EDIT_IMMUTABLE.is_match(cmd)
+            || RE_JJ_BOOKMARK_DELETE_MAIN.is_match(cmd)
+            || RE_JJ_REPO_FLAG.is_match(cmd)
+            || (RE_JJ_CMD.is_match(cmd) && !RE_JJ_SAFE_SUBCOMMAND.is_match(cmd))
     }
 }
 
@@ -192,8 +206,11 @@ impl VcsBackend for JjBackend {
 
         if let Ok(o) = output {
             let stdout = String::from_utf8_lossy(&o.stdout);
+            // Match "name: ..." exactly — use "name:" to avoid prefix false
+            // positives (e.g. "mainline" matching "main").
             for candidate in &["main", "master", "trunk"] {
-                if stdout.lines().any(|l| l.starts_with(candidate)) {
+                let prefix = format!("{candidate}:");
+                if stdout.lines().any(|l| l.starts_with(&prefix)) {
                     return (*candidate).to_string();
                 }
             }
