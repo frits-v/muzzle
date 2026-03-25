@@ -1,16 +1,19 @@
 # CLAUDE.md — muzzle
 
 Session isolation hooks and persistent memory for Claude Code. Cargo workspace
-with two crates: `muzzle-hooks` (producing 5 binaries for workspace sandboxing,
-git safety, and worktree-based session isolation) and `muzzle-memory` (producing
-1 binary for persistent cross-project memory with FTS5 search).
+with three crates: `muzzle-hooks` (producing 6 binaries for workspace sandboxing,
+git safety, worktree-based session isolation, and persona injection),
+`muzzle-memory` (producing 1 binary for persistent cross-project memory with
+FTS5 search), and `muzzle-persona` (producing 1 binary for persistent persona
+assignment with affinity-based scoring).
 
 ## Architecture
 
-The workspace contains two crates:
+The workspace contains three crates:
 
-- `hooks/` — `muzzle-hooks`: session isolation, sandbox enforcement, git safety
+- `hooks/` — `muzzle-hooks`: session isolation, sandbox enforcement, git safety, persona injection
 - `memory/` — `muzzle-memory`: persistent memory with SQLite + FTS5
+- `persona/` — `muzzle-persona`: persistent persona assignment with affinity scoring
 
 `muzzle-hooks` source layout (`hooks/src/`):
 
@@ -35,6 +38,7 @@ src/
     changelog_bin.rs  # PostToolUse hook (audit log entries)
     session_end.rs    # SessionEnd hook (cleanup worktrees, gzip logs)
     ensure_worktree.rs # On-demand worktree creation binary
+    persona_inject.rs # PreToolUse hook (persona injection for named agents)
 ```
 
 `muzzle-memory` source layout (`memory/src/`):
@@ -45,6 +49,20 @@ store.rs            # SQLite + FTS5 schema, CRUD, search, topic upsert
 capture.rs          # Parse changelog markdown into session summaries
 inject.rs           # Format memories as markdown for SessionStart injection
 main.rs             # CLI: search, save, capture, context, inject, stats
+```
+
+`muzzle-persona` source layout (`persona/src/`):
+
+```
+lib.rs              # Library root
+types.rs            # Persona, Assignment structs, role vocabulary
+schema.rs           # SQLite schema (3 tables, 5 indexes)
+seed.rs             # TOML seed parser, DB loader, ISO 8601 formatter
+broker.rs           # Assignment scoring (affinity + expertise - recency)
+preamble.rs         # 500-char persona prompt preamble formatter
+release.rs          # Session-end: clear locks, recompute affinity, retire
+grow.rs             # Auto-grow: random name + traits + weighted expertise
+main.rs             # CLI: assign, release, list, show, history, feedback, etc.
 ```
 
 ## Commands
@@ -92,11 +110,12 @@ After pushing, poll PR checks and review comments in a single loop for up to 10 
 ## Key Design Decisions
 
 - **Three-layer sandbox**: Session resolution -> context-aware path checking -> git safety regex
-- **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`
+- **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`. Persona injection is a SEPARATE binary (`persona-inject`) to preserve this constraint.
 - **Lazy worktrees**: `WORKTREE_MISSING:<repo>` denials trigger `ensure-worktree` on-demand
 - **Config persistence**: `.agents/`, `.claude/` redirect to main checkout when gitignored; if tracked by git (dir exists in worktree), allowed in-place
 - **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
-- **Panic -> deny**: All hooks catch panics and deny rather than fail open
+- **Panic -> deny**: All hooks catch panics and deny rather than fail open (except `persona-inject` which fails open — persona injection is not a security gate)
+- **Hook ordering**: `persona-inject` must be registered BEFORE `permissions` in the hook chain (Claude Code bug #15897: later hooks overwrite earlier hooks' `updatedInput`)
 
 ## Memory Crate
 
@@ -105,6 +124,14 @@ Persistent cross-project memory with FTS5 full-text search. Storage: `~/.muzzle/
 CLI: `memory search|save|capture|context|inject|stats`
 
 Optional scopes for commit convention: add `memory`, `store`, `capture`, `inject` to the scopes list.
+
+## Persona Crate
+
+Persistent persona assignment with affinity-based scoring. Storage: `~/.muzzle/memory.db` (shared).
+
+CLI: `muzzle-persona assign|release|list|show|history|feedback|search|retire|reactivate|grow|compact|stats|seed|orphan-cleanup`
+
+Optional scopes for commit convention: add `persona`, `broker`, `preamble` to the scopes list.
 
 ## Commit Convention
 
@@ -128,7 +155,8 @@ and PR titles.
 | `evolve`   | Autonomous improvement cycle ledger entries     |
 
 Optional scopes: `sandbox`, `gitcheck`, `worktree`, `session`, `permissions`,
-`changelog`, `mcp`, `log`, `bench`, `fuzz`, `memory`, `store`, `capture`, `inject`.
+`changelog`, `mcp`, `log`, `bench`, `fuzz`, `memory`, `store`, `capture`, `inject`,
+`persona`, `broker`, `preamble`.
 
 **PR titles** must also follow this format. Squash-merge PRs inherit the PR title
 as the merge commit message.
@@ -151,6 +179,7 @@ chore: bump to v0.2.0 with cargo-release
 ci: add binary size gate to CI workflow
 test(gitcheck): add property-based tests for git safety
 feat(memory): add FTS5 full-text search to memory store
+feat(persona): add persona-inject PreToolUse hook binary
 evolve: cycle 13 -- directive-4-proptest improved
 ```
 
@@ -177,7 +206,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-219 tests (166 unit + 5 doc + 13 integration + 10 proptest + 25 memory) plus 4 fuzz targets.
+221 tests (166 unit + 5 doc + 15 integration + 10 proptest + 25 memory) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
