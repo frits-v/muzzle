@@ -3,6 +3,8 @@
 use rusqlite::{params, Connection, Result};
 use std::collections::HashMap;
 
+use crate::grow;
+use crate::seed;
 use crate::types::{expertise_for_role, normalize_role, Assignment};
 
 // ---------------------------------------------------------------------------
@@ -137,8 +139,20 @@ fn pick_best(pool: &mut Vec<Candidate>, role: &str) -> Result<Candidate> {
     Ok(pool.swap_remove(best_idx))
 }
 
-/// Try `pick_best`; returns error on empty pool (Task 3 will add grow fallback).
-fn pick_or_grow(pool: &mut Vec<Candidate>, role: &str) -> Result<Candidate> {
+/// Try `pick_best`; if the pool is empty, grow one new persona and retry once.
+fn pick_or_grow(conn: &Connection, pool: &mut Vec<Candidate>, role: &str) -> Result<Candidate> {
+    if !pool.is_empty() {
+        return pick_best(pool, role);
+    }
+
+    // Pool exhausted — grow one persona from the embedded seed vocabulary.
+    let seed_str = include_str!("../personas-seed.toml");
+    let seed = seed::parse_seed(seed_str)
+        .map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+    grow::grow(conn, &seed.meta, 1, &mut grow::Rng::from_time())?;
+
+    // Reload candidates and retry.
+    *pool = load_candidates(conn)?;
     pick_best(pool, role)
 }
 
@@ -368,10 +382,10 @@ pub fn assign(
                 if let Some(forced) = forced_first.take() {
                     forced
                 } else {
-                    pick_or_grow(&mut pool, role)?
+                    pick_or_grow(conn, &mut pool, role)?
                 }
             } else {
-                pick_or_grow(&mut pool, role)?
+                pick_or_grow(conn, &mut pool, role)?
             };
 
             // UPDATE persona: lock to session + record last_assigned.

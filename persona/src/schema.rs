@@ -40,7 +40,8 @@ pub fn ensure_schema(conn: &Connection) -> Result<()> {
             agent_slot  TEXT NOT NULL,
             team_name   TEXT,
             agent_name  TEXT,
-            assigned_at TEXT NOT NULL
+            assigned_at TEXT NOT NULL,
+            released_at TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_personas_status
