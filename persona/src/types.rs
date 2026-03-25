@@ -26,16 +26,13 @@ pub const ROLE_VOCABULARY: &[&str] = &[
 /// An empty slice means any expertise qualifies.
 pub fn expertise_for_role(role: &str) -> &'static [&'static str] {
     match role {
-        "code-reviewer" => &["backend", "frontend", "performance", "architecture"],
-        "security-review" => &["security", "infrastructure"],
-        "researcher" => &["ML", "architecture", "backend"],
-        "architecture" => &["architecture", "backend", "infrastructure"],
-        "implementation" => &["backend", "frontend", "performance"],
-        "testing" => &["testing", "frontend", "backend"],
-        "documentation" => &["documentation", "frontend"],
-        "red-team" => &["security"],
-        "infrastructure" => &["infrastructure", "backend"],
-        "debugging" => &["backend", "frontend", "performance"],
+        "security-review" => &["security", "compliance", "red-team"],
+        "architecture" => &["architecture", "infrastructure", "backend"],
+        "red-team" => &["red-team", "security"],
+        "implementation" => &["backend", "frontend", "infrastructure", "ML"],
+        "testing" => &["testing", "backend", "frontend"],
+        "infrastructure" => &["infrastructure", "devops", "architecture"],
+        // code-reviewer, researcher, documentation, debugging, general → any
         _ => &[],
     }
 }
@@ -171,7 +168,8 @@ mod tests {
     fn expertise_for_known_roles() {
         let security = expertise_for_role("security-review");
         assert!(security.contains(&"security"));
-        assert!(security.contains(&"infrastructure"));
+        assert!(security.contains(&"compliance"));
+        assert!(security.contains(&"red-team"));
 
         let testing = expertise_for_role("testing");
         assert!(testing.contains(&"testing"));
