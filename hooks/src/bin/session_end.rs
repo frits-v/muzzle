@@ -92,9 +92,15 @@ fn remove_worktrees(sess: &session::State) {
             );
             let cleanup_hint = match entry.vcs_kind {
                 VcsKind::Jj | VcsKind::JjColocated => {
+                    // jj workspace forget takes a workspace NAME (last path component),
+                    // not a full path.
+                    let ws_name = std::path::Path::new(&entry.wt_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
                     format!(
-                        "jj workspace forget {} && rm -rf {}",
-                        entry.wt_path, entry.wt_path
+                        "cd {} && jj workspace forget {} && rm -rf {}",
+                        entry.repo_path, ws_name, entry.wt_path
                     )
                 }
                 VcsKind::Git => {

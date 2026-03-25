@@ -21,7 +21,7 @@ pub struct JjBackend {
 static RE_JJ_GIT_PUSH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bjj\s+git\s+push\b").unwrap());
 static RE_JJ_PUSH_BOOKMARK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bjj\s+git\s+push\b.*(-b|--bookmark)\s+").unwrap());
+    LazyLock::new(|| Regex::new(r"\bjj\s+git\s+push\b.*(-b\s+|--bookmark[\s=])").unwrap());
 static RE_JJ_BOOKMARK_DELETE_MAIN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bjj\s+bookmark\s+delete\s+(main|master|trunk)\b").unwrap());
 static RE_JJ_REPO_FLAG: LazyLock<Regex> =
@@ -127,7 +127,9 @@ impl VcsBackend for JjBackend {
             );
         }
 
-        (true, None)
+        // (false, None) = success: not dirty, no error.
+        // jj auto-snapshots, so the workspace is never "dirty" in the git sense.
+        (false, None)
     }
 
     fn workspace_list(&self, repo_path: &Path) -> Vec<WorkspaceInfo> {
@@ -304,6 +306,17 @@ mod tests {
         let backend = JjBackend { colocated: false };
         let result = backend.check_safety("jj git push -b feature");
         assert_eq!(result, GitResult::Ok, "push with -b flag should be allowed");
+    }
+
+    #[test]
+    fn test_jj_safety_bookmark_push_equals_form_allowed() {
+        let backend = JjBackend { colocated: false };
+        let result = backend.check_safety("jj git push --bookmark=my-feature");
+        assert_eq!(
+            result,
+            GitResult::Ok,
+            "push with --bookmark= form should be allowed"
+        );
     }
 
     #[test]

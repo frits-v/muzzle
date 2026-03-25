@@ -52,7 +52,7 @@ impl VcsBackend for GitBackend {
         tmp_dir: &Path,
     ) -> Result<SpecEntry, String> {
         let repo_str = repo_path.to_string_lossy().to_string();
-        let wt_path = config::worktree_path(repo_path, session_id);
+        let wt_path = dest.to_path_buf();
 
         // Ensure .worktrees dir exists.
         std::fs::create_dir_all(config::worktree_dir(repo_path))
@@ -110,7 +110,7 @@ impl VcsBackend for GitBackend {
             }
         }
 
-        let repo_name = dest
+        let repo_name = repo_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
