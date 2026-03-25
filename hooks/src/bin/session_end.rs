@@ -66,9 +66,32 @@ fn run() {
     // Release persona locks for this session (best-effort)
     let persona_bin = config::bin_dir().join("muzzle-persona");
     if persona_bin.exists() {
-        let _ = std::process::Command::new(&persona_bin)
+        match std::process::Command::new(&persona_bin)
             .args(["release", &format!("--session={}", sess.id)])
-            .output();
+            .output()
+        {
+            Ok(out) if !out.status.success() => {
+                let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+                muzzle::log::emit_full(
+                    "WARN",
+                    "session-end",
+                    "muzzle-persona release failed",
+                    None,
+                    Some(stderr.as_str()),
+                );
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                muzzle::log::emit_full(
+                    "WARN",
+                    "session-end",
+                    "muzzle-persona release error",
+                    None,
+                    Some(msg.as_str()),
+                );
+            }
+            Ok(_) => {}
+        }
     }
 }
 

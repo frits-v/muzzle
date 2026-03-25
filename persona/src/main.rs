@@ -86,10 +86,7 @@ fn run_assign(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         "assignments".to_string(),
         serde_json::to_value(&assignments)?,
     );
-    output.insert(
-        "preambles".to_string(),
-        serde_json::to_value(&preambles)?,
-    );
+    output.insert("preambles".to_string(), serde_json::to_value(&preambles)?);
 
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
@@ -109,28 +106,45 @@ fn run_list(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     let conn = open_db()?;
 
-    let sql = if status_filter == "all" {
-        "SELECT name, status, expertise, last_assigned FROM personas ORDER BY name".to_string()
+    let rows_vec: Vec<(String, String, String, Option<String>)> = if status_filter == "all" {
+        let mut stmt = conn
+            .prepare("SELECT name, status, expertise, last_assigned FROM personas ORDER BY name")?;
+        let collected: Vec<_> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        collected
     } else {
-        format!(
-            "SELECT name, status, expertise, last_assigned FROM personas WHERE status = '{}' ORDER BY name",
-            status_filter.replace('\'', "''")
-        )
+        let mut stmt = conn.prepare(
+            "SELECT name, status, expertise, last_assigned FROM personas WHERE status = ?1 ORDER BY name",
+        )?;
+        let collected: Vec<_> = stmt
+            .query_map(params![status_filter], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        collected
     };
 
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
-        let name: String = row.get(0)?;
-        let status: String = row.get(1)?;
-        let expertise_json: String = row.get(2)?;
-        let last_assigned: Option<String> = row.get(3)?;
-        Ok((name, status, expertise_json, last_assigned))
-    })?;
-
-    println!("{:<25} {:<10} {:<30} LAST_ASSIGNED", "NAME", "STATUS", "EXPERTISE");
+    println!(
+        "{:<25} {:<10} {:<30} LAST_ASSIGNED",
+        "NAME", "STATUS", "EXPERTISE"
+    );
     println!("{}", "-".repeat(80));
-    for row in rows {
-        let (name, status, expertise_json, last_assigned) = row?;
+    for (name, status, expertise_json, last_assigned) in rows_vec {
         let expertise: Vec<String> = serde_json::from_str(&expertise_json).unwrap_or_default();
         if let Some(ref ex_filter) = expertise_filter {
             if !expertise.iter().any(|e| e == ex_filter) {
@@ -221,7 +235,10 @@ fn run_history(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .to_string()
     };
 
-    println!("{:<20} {:<20} {:<15} {:<25} RELEASED_AT", "ROLE", "PROJECT", "SLOT", "ASSIGNED_AT");
+    println!(
+        "{:<20} {:<20} {:<15} {:<25} RELEASED_AT",
+        "ROLE", "PROJECT", "SLOT", "ASSIGNED_AT"
+    );
     println!("{}", "-".repeat(90));
 
     if let Some(proj) = project_filter {
@@ -334,20 +351,21 @@ fn run_search(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // Simple score: affinity + expertise match bonus.
-    let mut scored: Vec<(f32, &Row)> = rows
-        .iter()
-        .map(|r| {
-            let affinity = r.affinity_scores.get(&role).copied().unwrap_or(0.0);
-            let expertise_bonus = if r.expertise.iter().any(|e| {
-                muzzle_persona::types::expertise_for_role(&role).contains(&e.as_str())
-            }) {
-                0.3
-            } else {
-                0.0
-            };
-            (affinity + expertise_bonus, r)
-        })
-        .collect();
+    let mut scored: Vec<(f32, &Row)> =
+        rows.iter()
+            .map(|r| {
+                let affinity = r.affinity_scores.get(&role).copied().unwrap_or(0.0);
+                let expertise_bonus =
+                    if r.expertise.iter().any(|e| {
+                        muzzle_persona::types::expertise_for_role(&role).contains(&e.as_str())
+                    }) {
+                        0.3
+                    } else {
+                        0.0
+                    };
+                (affinity + expertise_bonus, r)
+            })
+            .collect();
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit);
@@ -356,7 +374,13 @@ fn run_search(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(60));
     for (rank, (score, row)) in scored.iter().enumerate() {
         let expertise_str = row.expertise.join(", ");
-        println!("{:<5} {:<25} {:<8.3} {}", rank + 1, row.name, score, expertise_str);
+        println!(
+            "{:<5} {:<25} {:<8.3} {}",
+            rank + 1,
+            row.name,
+            score,
+            expertise_str
+        );
     }
     Ok(())
 }
@@ -452,36 +476,54 @@ fn run_compact(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut groups: HashMap<(i64, String, String), (String, Vec<i64>)> = HashMap::new();
     for row in &rows {
         let key = (row.persona_id, row.role.clone(), row.month.clone());
-        let entry = groups.entry(key).or_insert_with(|| (row.name.clone(), Vec::new()));
+        let entry = groups
+            .entry(key)
+            .or_insert_with(|| (row.name.clone(), Vec::new()));
         entry.1.push(row.id);
     }
 
-    let mut compacted = 0usize;
-    for ((persona_id, role, month), (name, ids)) in &groups {
-        let summary = format!(
-            "Compacted {month} ({} feedback entries for {name} as {role})",
-            ids.len()
-        );
-        let now = now_iso8601();
+    conn.execute_batch("BEGIN")?;
+    let result: Result<usize, rusqlite::Error> = (|| {
+        let mut compacted = 0usize;
+        for ((persona_id, role, month), (name, ids)) in &groups {
+            let summary = format!(
+                "Compacted {month} ({} feedback entries for {name} as {role})",
+                ids.len()
+            );
+            let now = now_iso8601();
 
-        // Insert compacted summary row.
-        conn.execute(
-            "INSERT INTO persona_feedback (persona_id, timestamp, project, role, observation, source, compacted)
-             VALUES (?1, ?2, '', ?3, ?4, 'compact', 1)",
-            params![persona_id, now, role, summary],
-        )?;
-
-        // Mark originals as compacted.
-        for &id in ids {
+            // Insert compacted summary row.
             conn.execute(
-                "UPDATE persona_feedback SET compacted = 1 WHERE id = ?1",
-                params![id],
+                "INSERT INTO persona_feedback (persona_id, timestamp, project, role, observation, source, compacted)
+                 VALUES (?1, ?2, '', ?3, ?4, 'compact', 1)",
+                params![persona_id, now, role, summary],
             )?;
-        }
-        compacted += ids.len();
-    }
 
-    println!("compacted {compacted} feedback entries into {} summaries", groups.len());
+            // Mark originals as compacted.
+            for &id in ids {
+                conn.execute(
+                    "UPDATE persona_feedback SET compacted = 1 WHERE id = ?1",
+                    params![id],
+                )?;
+            }
+            compacted += ids.len();
+        }
+        Ok(compacted)
+    })();
+
+    match result {
+        Ok(compacted) => {
+            conn.execute_batch("COMMIT")?;
+            println!(
+                "compacted {compacted} feedback entries into {} summaries",
+                groups.len()
+            );
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
 

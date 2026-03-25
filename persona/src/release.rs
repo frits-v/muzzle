@@ -8,12 +8,28 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 const POSITIVE_KEYWORDS: &[&str] = &[
-    "great", "caught", "good", "solid", "excellent", "precise", "thorough", "correct", "helpful",
+    "great",
+    "caught",
+    "good",
+    "solid",
+    "excellent",
+    "precise",
+    "thorough",
+    "correct",
+    "helpful",
     "fast",
 ];
 
 const NEGATIVE_KEYWORDS: &[&str] = &[
-    "missed", "verbose", "wrong", "slow", "confused", "irrelevant", "shallow", "broke", "failed",
+    "missed",
+    "verbose",
+    "wrong",
+    "slow",
+    "confused",
+    "irrelevant",
+    "shallow",
+    "broke",
+    "failed",
     "noisy",
 ];
 
@@ -55,9 +71,8 @@ fn recompute_affinity(
     let total: u32 = role_counts.values().sum();
 
     // Load feedback for this persona.
-    let mut stmt = conn.prepare(
-        "SELECT role, observation FROM persona_feedback WHERE persona_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT role, observation FROM persona_feedback WHERE persona_id = ?1")?;
     let rows = stmt.query_map(params![persona_id], |row| {
         let role: String = row.get(0)?;
         let observation: String = row.get(1)?;
@@ -303,8 +318,7 @@ general = "Be thorough."
                 |r| r.get(0),
             )
             .unwrap();
-        let role_counts: HashMap<String, u32> =
-            serde_json::from_str(&role_counts_json).unwrap();
+        let role_counts: HashMap<String, u32> = serde_json::from_str(&role_counts_json).unwrap();
         assert_eq!(
             role_counts.get("general").copied().unwrap_or(0),
             1,

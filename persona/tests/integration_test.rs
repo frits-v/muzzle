@@ -131,7 +131,11 @@ fn full_lifecycle() {
         let counts: std::collections::HashMap<String, u32> =
             serde_json::from_str(&role_counts_json).expect("parse role_counts");
         let total: u32 = counts.values().sum();
-        assert!(total > 0, "role_counts should be non-zero after release for {}", a.name);
+        assert!(
+            total > 0,
+            "role_counts should be non-zero after release for {}",
+            a.name
+        );
     }
 
     // Verify released_at is set on assignments.

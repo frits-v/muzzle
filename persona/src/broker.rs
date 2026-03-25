@@ -85,11 +85,7 @@ fn recency_penalty(last_assigned: &Option<String>) -> f32 {
 // ---------------------------------------------------------------------------
 
 fn score(candidate: &Candidate, role: &str) -> f32 {
-    let affinity = candidate
-        .affinity_scores
-        .get(role)
-        .copied()
-        .unwrap_or(0.0);
+    let affinity = candidate.affinity_scores.get(role).copied().unwrap_or(0.0);
 
     let required = expertise_for_role(role);
     let expertise_overlap: f32 = if required.is_empty() {
@@ -99,7 +95,11 @@ fn score(candidate: &Candidate, role: &str) -> f32 {
             .expertise
             .iter()
             .any(|e| required.contains(&e.as_str()));
-        if has_match { 1.0 } else { 0.0 }
+        if has_match {
+            1.0
+        } else {
+            0.0
+        }
     };
 
     affinity + expertise_overlap * 0.3 - recency_penalty(&candidate.last_assigned)
@@ -147,9 +147,11 @@ fn pick_or_grow(conn: &Connection, pool: &mut Vec<Candidate>, role: &str) -> Res
 
     // Pool exhausted — grow one persona from the embedded seed vocabulary.
     let seed_str = include_str!("../personas-seed.toml");
-    let seed = seed::parse_seed(seed_str)
-        .map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
-    grow::grow(conn, &seed.meta, 1, &mut grow::Rng::from_time())?;
+    let seed = seed::parse_seed(seed_str).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+    let grown = grow::grow(conn, &seed.meta, 1, &mut grow::Rng::from_time())?;
+    if grown == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
 
     // Reload candidates and retry.
     *pool = load_candidates(conn)?;

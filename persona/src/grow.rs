@@ -19,8 +19,8 @@ impl Rng {
         let nanos = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
-            .subsec_nanos();
-        Rng((nanos as u64) | 1)
+            .as_nanos() as u64;
+        Rng(nanos | 1)
     }
 
     /// Advance the state and return the next pseudo-random value.
@@ -124,12 +124,7 @@ fn pick_expertise_weighted(
 ///
 /// Returns the number of personas actually inserted (may be fewer than
 /// `count` if unique names could not be found within the retry budget).
-pub fn grow(
-    conn: &Connection,
-    meta: &SeedMeta,
-    count: usize,
-    rng: &mut Rng,
-) -> Result<usize> {
+pub fn grow(conn: &Connection, meta: &SeedMeta, count: usize, rng: &mut Rng) -> Result<usize> {
     if meta.first_names.is_empty() || meta.last_names.is_empty() {
         return Ok(0);
     }
@@ -214,7 +209,7 @@ pub fn grow(
 mod tests {
     use super::*;
     use crate::schema::ensure_schema;
-    use crate::seed::{parse_seed, insert_seed};
+    use crate::seed::{insert_seed, parse_seed};
     use rusqlite::Connection;
 
     const SAMPLE_TOML: &str = r#"
@@ -277,8 +272,14 @@ general = "Be thorough."
         let traits: Vec<String> = serde_json::from_str(&traits_json).unwrap();
         let expertise: Vec<String> = serde_json::from_str(&expertise_json).unwrap();
 
-        assert!(!traits.is_empty(), "grown persona must have at least one trait");
-        assert!(!expertise.is_empty(), "grown persona must have at least one expertise tag");
+        assert!(
+            !traits.is_empty(),
+            "grown persona must have at least one trait"
+        );
+        assert!(
+            !expertise.is_empty(),
+            "grown persona must have at least one expertise tag"
+        );
         assert_eq!(status, "active", "grown persona must be active");
 
         // All traits must be from the vocabulary.

@@ -149,7 +149,8 @@ fn try_inject_persona(input: &HookInput) -> Option<HookResponse> {
     // Build muzzle-persona assign arguments
     let persona_bin = config::bin_dir().join("muzzle-persona");
 
-    let roles_arg = format!("--roles=[\"{role}\"]");
+    let roles_json = serde_json::to_string(&[&role]).unwrap_or_else(|_| format!("[\"{role}\"]"));
+    let roles_arg = format!("--roles={roles_json}");
     let project_arg = format!("--project={project}");
     let session_arg = format!("--session={session_id}");
     let agent_arg = format!("--agent-name={agent_name}");
