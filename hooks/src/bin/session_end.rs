@@ -7,6 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use muzzle::config;
 use muzzle::session::{self, SpecEntry};
+use muzzle::vcs::VcsKind;
 use muzzle::worktree;
 use serde::Deserialize;
 use std::fs;
@@ -70,7 +71,17 @@ fn remove_worktrees(sess: &session::State) {
     };
 
     for entry in &entries {
-        let (dirty, err) = worktree::remove(entry);
+        let (dirty, err) = match entry.vcs_kind {
+            VcsKind::Jj | VcsKind::JjColocated => {
+                use muzzle::vcs::jj::JjBackend;
+                use muzzle::vcs::VcsBackend;
+                let jj = JjBackend {
+                    colocated: entry.vcs_kind == VcsKind::JjColocated,
+                };
+                jj.workspace_remove(entry, false)
+            }
+            VcsKind::Git => worktree::remove(entry),
+        };
         if dirty {
             muzzle::log::emit_full(
                 "WARN",
@@ -79,11 +90,31 @@ fn remove_worktrees(sess: &session::State) {
                 None,
                 Some(&entry.wt_path),
             );
+            let cleanup_hint = match entry.vcs_kind {
+                VcsKind::Jj | VcsKind::JjColocated => {
+                    // jj workspace forget takes a workspace NAME (last path component),
+                    // not a full path.
+                    let ws_name = std::path::Path::new(&entry.wt_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+                    format!(
+                        "cd {} && jj workspace forget {} && rm -rf {}",
+                        entry.repo_path, ws_name, entry.wt_path
+                    )
+                }
+                VcsKind::Git => {
+                    format!(
+                        "git -C {} worktree remove --force {}",
+                        entry.repo_path, entry.wt_path
+                    )
+                }
+            };
             let _ = append_to_changelog(
                 &sess.changelog_path,
                 &format!(
-                    "\n### WARNING: Uncommitted worktree left behind\n- Path: {}\n- Cleanup: `git -C {} worktree remove --force {}`\n",
-                    entry.wt_path, entry.repo_path, entry.wt_path,
+                    "\n### WARNING: Uncommitted worktree left behind\n- Path: {}\n- Cleanup: `{cleanup_hint}`\n",
+                    entry.wt_path,
                 ),
             );
             continue;
