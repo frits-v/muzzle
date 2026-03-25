@@ -25,7 +25,7 @@ release:
 # Install release binaries to bin/
 install: release
 	@mkdir -p bin
-	@for b in session-start permissions changelog session-end ensure-worktree memory; do \
+	@for b in session-start permissions changelog session-end ensure-worktree memory persona-inject muzzle-persona; do \
 		cp target/release/$$b bin/$$b; \
 		echo "  installed bin/$$b"; \
 	done
@@ -35,14 +35,14 @@ install: release
 DEPLOY_TARGET ?= $(HOME)/.local/share/muzzle
 
 deploy: release
-	@if [ -n "$$(git status --porcelain -- hooks/ memory/ Cargo.toml Cargo.lock Makefile)" ]; then \
+	@if [ -n "$$(git status --porcelain -- hooks/ memory/ persona/ Cargo.toml Cargo.lock Makefile)" ]; then \
 		echo "ERROR: Uncommitted changes in tracked build files."; \
 		echo "Commit or stash before deploying."; \
-		git status --short -- hooks/ memory/ Cargo.toml Cargo.lock Makefile; \
+		git status --short -- hooks/ memory/ persona/ Cargo.toml Cargo.lock Makefile; \
 		exit 1; \
 	fi
 	@echo "Deploying to $(DEPLOY_TARGET)/"
-	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/hooks/src $(DEPLOY_TARGET)/memory/src
+	@mkdir -p $(DEPLOY_TARGET)/bin $(DEPLOY_TARGET)/hooks/src $(DEPLOY_TARGET)/memory/src $(DEPLOY_TARGET)/persona/src
 	@# Binaries
 	@for b in session-start permissions changelog session-end ensure-worktree memory; do \
 		cp target/release/$$b $(DEPLOY_TARGET)/bin/$$b; \
@@ -52,9 +52,11 @@ deploy: release
 	@rsync -a --delete --exclude='target/' --exclude='.git/' --exclude='.agents/' \
 		hooks/src/ $(DEPLOY_TARGET)/hooks/src/
 	@rsync -a --delete memory/src/ $(DEPLOY_TARGET)/memory/src/
+	@rsync -a --delete persona/src/ $(DEPLOY_TARGET)/persona/src/
 	@cp Cargo.toml Cargo.lock $(DEPLOY_TARGET)/ 2>/dev/null || cp Cargo.toml $(DEPLOY_TARGET)/
 	@cp hooks/Cargo.toml $(DEPLOY_TARGET)/hooks/
 	@cp memory/Cargo.toml $(DEPLOY_TARGET)/memory/
+	@cp persona/Cargo.toml $(DEPLOY_TARGET)/persona/
 	@echo "Deployed to $(DEPLOY_TARGET)/"
 
 # Lint Rust
@@ -87,7 +89,8 @@ sizes: release
 	@echo "Binary sizes:"
 	@ls -lh target/release/session-start target/release/permissions \
 		target/release/changelog target/release/session-end \
-		target/release/ensure-worktree target/release/memory 2>/dev/null | \
+		target/release/ensure-worktree target/release/memory \
+		target/release/persona-inject target/release/muzzle-persona 2>/dev/null | \
 		awk '{print "  " $$NF ": " $$5}'
 
 # Run a single test by name
