@@ -149,7 +149,7 @@ fn try_inject_persona(input: &HookInput) -> Option<HookResponse> {
     // Build muzzle-persona assign arguments
     let persona_bin = config::bin_dir().join("muzzle-persona");
 
-    let roles_arg = format!("--roles=[{role}]");
+    let roles_arg = format!("--roles=[\"{role}\"]");
     let project_arg = format!("--project={project}");
     let session_arg = format!("--session={session_id}");
     let agent_arg = format!("--agent-name={agent_name}");
@@ -171,13 +171,14 @@ fn try_inject_persona(input: &HookInput) -> Option<HookResponse> {
     }
 
     let stdout = String::from_utf8(output.stdout).ok()?;
-    let assignments: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+    let output_obj: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
 
-    // Get preamble from first assignment
-    let preamble = assignments
-        .as_array()?
-        .first()?
-        .get("preamble")
+    // Output is {"assignments": [...], "preambles": ["<string>", ...]}
+    // Get preamble string from the first element of the preambles array
+    let preamble = output_obj
+        .get("preambles")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
         .and_then(|v| v.as_str())?;
 
     if preamble.is_empty() {
