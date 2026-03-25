@@ -39,3 +39,7 @@ path = "src/bin/session_end.rs"
 [[bin]]
 name = "ensure-worktree"
 path = "src/bin/ensure_worktree.rs"
+
+[[bin]]
+name = "persona-inject"
+path = "src/bin/persona_inject.rs"
