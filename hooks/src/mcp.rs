@@ -625,4 +625,87 @@ mod tests {
         // Cleanup
         let _ = fs::remove_dir_all(&rate_dir);
     }
+
+    #[test]
+    fn test_github_unknown_action_ask() {
+        let d = route("mcp__github__delete_repository");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown GitHub action"
+        );
+    }
+
+    #[test]
+    fn test_atlassian_jira_read_allow() {
+        let d = route("mcp__atlassian__jiraRead");
+        assert_eq!(d, McpDecision::Allow, "jiraRead should be allowed");
+    }
+
+    #[test]
+    fn test_atlassian_jira_write_allow() {
+        let d = route("mcp__atlassian__jiraWrite");
+        assert_eq!(d, McpDecision::Allow, "jiraWrite should be allowed");
+    }
+
+    #[test]
+    fn test_atlassian_unknown_action_ask() {
+        let d = route("mcp__atlassian__deleteEverything");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown Atlassian action"
+        );
+    }
+
+    #[test]
+    fn test_sysdig_unknown_action_ask() {
+        let d = route("mcp__sysdig__delete_cluster");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown Sysdig action"
+        );
+    }
+
+    #[test]
+    fn test_slack_unknown_action_ask() {
+        let d = route("mcp__claude_ai_Slack__slack_delete_channel");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown Slack action"
+        );
+    }
+
+    #[test]
+    fn test_datadog_unknown_action_ask() {
+        let d = route("mcp__datadog__delete_dashboard");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown Datadog action"
+        );
+    }
+
+    #[test]
+    fn test_atlassian_both_prefixes_route_same() {
+        let d1 = route("mcp__atlassian__getJiraIssue");
+        let d2 = route("mcp__claude_ai_Atlassian__getJiraIssue");
+        assert_eq!(d1, d2, "both Atlassian prefixes should route identically");
+    }
+
+    #[test]
+    fn test_create_jira_empty_session_no_rate_limit() {
+        let d = route_with_session("mcp__claude_ai_Atlassian__createJiraIssue", Some(""));
+        assert!(
+            matches!(d, McpDecision::Ask(ref msg) if msg.contains("Create Jira issue")),
+            "empty session should skip rate limiting, got {:?}",
+            d
+        );
+    }
+
+    #[test]
+    fn test_mcp_decision_debug_clone_eq() {
+        let a = McpDecision::Allow;
+        let b = a.clone();
+        assert_eq!(a, b);
+        assert_ne!(McpDecision::Allow, McpDecision::Deny("x".into()));
+        assert!(format!("{:?}", McpDecision::Ask("r".into())).contains("Ask"));
+    }
 }
