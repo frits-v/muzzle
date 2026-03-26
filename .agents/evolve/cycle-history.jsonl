@@ -14,3 +14,4 @@
 {"cycle":14,"target":"directive-19-openssf-scorecard","result":"improved","canonical_sha":"2713ab4","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:34:10-07:00"}
 {"cycle":15,"target":"directive-19-codeowners-branch-protect","result":"improved","canonical_sha":"3fafd23","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:35:42-07:00"}
 {"cycle":16,"target":"directive-19-release-please-ci-trigger","result":"improved","canonical_sha":"79544f7","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:40:05-07:00"}
+{"cycle":17,"target":"directive-21-architecture-doc","result":"improved","timestamp":"2026-03-25T22:52:00-07:00","goals_passing":12,"goals_total":19}

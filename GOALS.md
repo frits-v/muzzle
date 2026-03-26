@@ -218,6 +218,121 @@ Current: 26 memory tests (22 unit + 4 integration). Binary: 1.4MB.
 
 **Steer:** increase
 
+### 21. Standalone architecture document
+
+Created `docs/architecture.md` with layer diagram (3-tier: binaries → core →
+infra), module map for both crates, dependency direction rules, 5 forbidden
+dependencies, cross-cutting concerns table, key invariants, and external
+dependency inventory. Architecture is now warm context — CLAUDE.md stays lean.
+
+Reference: harness.md Phase 0d — architecture document.
+
+**Steer:** complete
+
+### 22. Hook error messages include remediation instructions
+
+All hook denial messages (sandbox violations, git safety blocks, worktree
+missing) should follow the WHAT/FIX/REF format from harness engineering:
+
+```
+WHAT: <what was violated>
+FIX: <specific instruction the agent can execute>
+REF: <pointer to relevant doc or config>
+```
+
+Muzzle *is* a harness — its own error messages should be the gold standard
+for agent-actionable feedback. Audit all `deny()` and `block()` outputs.
+
+Reference: harness.md Pillar 2c — custom linters with remediation messages.
+
+**Steer:** increase
+
+### 23. Change risk classification for PRs
+
+Implement path-based risk classification for changes:
+
+| Risk | Paths | Gate Config |
+|------|-------|-------------|
+| Low | docs/, tests/, scripts/, CHANGELOG.md | Standard gates |
+| Medium | hooks/src/, memory/src/ (non-critical) | Standard + proptest |
+| High | sandbox.rs, gitcheck.rs, session.rs, worktree/ | All gates + second-agent review |
+
+Classification can be a script mapping touched files to risk levels. High-risk
+changes to security-critical sandbox and session code should require additional
+verification beyond standard CI.
+
+Reference: harness.md Pillar 3a — change risk classification.
+
+**Steer:** increase
+
+### 24. Scheduled entropy cleanup (garbage collection)
+
+Periodic maintenance sweeps for:
+- Dead code: unused exports, unreachable modules
+- Stale docs: broken links, outdated references in CLAUDE.md
+- Pattern drift: newer code deviating from established patterns
+- Test quality: no-assertion tests, flaky tests, duplicate coverage
+
+Schedule during low-activity windows. GC PRs touching only docs or dead code
+removal may auto-merge; logic changes require review.
+
+Reference: harness.md Pillar 4b — garbage collection.
+
+**Steer:** increase
+
+### 25. Harness observability
+
+Track the effectiveness of muzzle's own CI gates:
+- Gate pass/fail rates: which gates catch violations most often?
+- Self-repair success rate: how often does the agent fix a violation on first
+  attempt from the error message alone?
+- CI duration trend: alert if the harness is slowing down
+- Override/escalation frequency: how often are lint suppressions added?
+
+Start simple: a markdown file or CI script that appends metrics after each run.
+Graduate to dashboard as data accumulates.
+
+Reference: harness.md Pillar 4f — harness observability.
+
+**Steer:** increase
+
+### 26. Bug-category-to-gate coverage analysis
+
+Map each category of bug an agent could introduce to the gate that catches it.
+Identify gaps:
+
+| Bug Category | Caught By | Gap? |
+|---|---|---|
+| Path traversal bypass | Sandbox fuzz + proptest | No |
+| Git safety regex miss | gitcheck fuzz + proptest | No |
+| Worktree state corruption | Integration tests | Partial — no concurrent session tests |
+| Incorrect deny/allow decision | Unit tests | Depends on test quality |
+| Performance regression | bench-coldstart.sh | Only for permissions binary |
+| CLAUDE.md drift | claude_md.rs integration test | No |
+| Supply chain attack | SHA-pinned actions + zizmor | No |
+| Subtle logic error in hook | ??? | Gap — needs mutation testing |
+
+Fill gaps incrementally. The gaps column is where risk lives.
+
+Reference: harness.md Pillar 4g — harness coverage analysis.
+
+**Steer:** increase
+
+### 27. CLAUDE.md pruning discipline
+
+CLAUDE.md should stay lean (~50-100 lines of guidance, rest is reference).
+When a pitfall or convention is now mechanically enforced by a lint rule, CI
+gate, or structural test, replace the detailed explanation with a one-liner:
+"Enforced by: [gate-name]."
+
+Review monthly for pruning opportunities. Convert prose rules into mechanical
+enforcement where possible — the lint rule is the enforcement, the doc entry
+is redundant.
+
+Reference: harness.md Pillar 1b — agent context file pruning policy.
+
+**Steer:** increase
+
 ## Gates
 
 | ID              | Check                                            | Weight | Description                       |
