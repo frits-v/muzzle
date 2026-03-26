@@ -119,4 +119,75 @@ mod tests {
         );
         assert!(json.contains("quotes"));
     }
+
+    #[test]
+    fn test_deny_unicode_reason() {
+        let json = Decision::Deny("path: /tmp/\u{1F4A9}/file \u{00E9}\u{00F1}".into()).to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("invalid JSON");
+        let reason = parsed["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap();
+        assert!(reason.contains('\u{1F4A9}'));
+        assert!(reason.contains('\u{00E9}'));
+    }
+
+    #[test]
+    fn test_deny_empty_reason() {
+        let json = Decision::Deny(String::new()).to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("invalid JSON");
+        assert_eq!(parsed["hookSpecificOutput"]["permissionDecisionReason"], "");
+    }
+
+    #[test]
+    fn test_ask_long_reason() {
+        let long = "x".repeat(10_000);
+        let json = Decision::Ask(long.clone()).to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("invalid JSON");
+        assert_eq!(
+            parsed["hookSpecificOutput"]["permissionDecisionReason"]
+                .as_str()
+                .unwrap()
+                .len(),
+            10_000
+        );
+    }
+
+    #[test]
+    fn test_deny_newlines_and_tabs() {
+        let json = Decision::Deny("line1\nline2\ttab".into()).to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("invalid JSON");
+        let reason = parsed["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap();
+        assert!(reason.contains('\n'));
+        assert!(reason.contains('\t'));
+    }
+
+    #[test]
+    fn test_decision_debug_impl() {
+        assert!(format!("{:?}", Decision::Allow).contains("Allow"));
+        assert!(format!("{:?}", Decision::Deny("r".into())).contains("Deny"));
+        assert!(format!("{:?}", Decision::Ask("q".into())).contains("Ask"));
+    }
+
+    #[test]
+    fn test_decision_clone_and_eq() {
+        let d1 = Decision::Deny("reason".into());
+        let d2 = d1.clone();
+        assert_eq!(d1, d2);
+        assert_ne!(Decision::Allow, Decision::Deny("x".into()));
+        assert_ne!(Decision::Ask("a".into()), Decision::Ask("b".into()));
+    }
+
+    #[test]
+    fn test_allow_has_no_reason_key() {
+        let json = Decision::Allow.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(
+            parsed["hookSpecificOutput"]
+                .get("permissionDecisionReason")
+                .is_none(),
+            "Allow should omit permissionDecisionReason entirely"
+        );
+    }
 }

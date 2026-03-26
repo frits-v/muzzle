@@ -130,4 +130,46 @@ mod tests {
             Some("/path/to/workspace"),
         );
     }
+
+    #[test]
+    fn test_iso_now_valid_date_components() {
+        let ts = iso_now();
+        let year: u32 = ts[0..4].parse().unwrap();
+        let month: u32 = ts[5..7].parse().unwrap();
+        let day: u32 = ts[8..10].parse().unwrap();
+        let hour: u32 = ts[11..13].parse().unwrap();
+        let min: u32 = ts[14..16].parse().unwrap();
+        let sec: u32 = ts[17..19].parse().unwrap();
+        assert!((2024..=2100).contains(&year));
+        assert!((1..=12).contains(&month));
+        assert!((1..=31).contains(&day));
+        assert!(hour < 24);
+        assert!(min < 60);
+        assert!(sec < 60);
+    }
+
+    #[test]
+    fn test_emit_unicode_message() {
+        emit("INFO", "test", "emoji: \u{1F680} accent: \u{00E9}");
+        emit_full(
+            "WARN",
+            "test",
+            "\u{00FC}nicode",
+            Some("sess-\u{00E9}"),
+            Some("d\u{00E9}tail"),
+        );
+    }
+
+    #[test]
+    fn test_emit_empty_strings() {
+        emit("", "", "");
+        emit_full("", "", "", Some(""), Some(""));
+    }
+
+    #[test]
+    fn test_emit_json_injection_in_message() {
+        // Ensure embedded JSON/quotes don't break the log line structure
+        emit("INFO", "test", r#"{"injected": true, "key": "val"}"#);
+        emit("INFO", "test", "message with \"quotes\" and \\backslashes");
+    }
 }
