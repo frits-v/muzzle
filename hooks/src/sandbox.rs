@@ -163,10 +163,8 @@ pub fn check_path_with_context(
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     let rel = extract_rel_path(&resolved, &repo, ws_str);
-                    let wt_path = format!(
-                        "{}/{}/.worktrees/{}/{}",
-                        ws_str, repo, sess.short_id, rel
-                    );
+                    let wt_path =
+                        format!("{}/{}/.worktrees/{}/{}", ws_str, repo, sess.short_id, rel);
                     return PathDecision::Deny(format!(
                         "WHAT: Write targets main checkout, not the session worktree. \
                          FIX: Use the worktree path instead: {wt_path}. \
@@ -197,7 +195,8 @@ pub fn check_path_with_context(
                     return PathDecision::Deny(
                         "WHAT: No worktree exists and repo name could not be extracted. \
                          FIX: Ensure the write path is inside a known repo directory. \
-                         REF: docs/architecture.md#key-invariants".into(),
+                         REF: docs/architecture.md#key-invariants"
+                            .into(),
                     );
                 }
 
