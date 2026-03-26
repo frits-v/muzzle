@@ -84,7 +84,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: Force push without --force-with-lease. \
              FIX: Use `git push --force-with-lease origin <branch>` instead. \
-             REF: CLAUDE.md#supply-chain-policy".into(),
+             REF: CLAUDE.md#supply-chain-policy"
+                .into(),
         );
     }
 
@@ -93,7 +94,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: Direct push to main/master. \
              FIX: Create a feature branch and open a PR instead. \
-             REF: CLAUDE.md#commit-convention".into(),
+             REF: CLAUDE.md#commit-convention"
+                .into(),
         );
     }
 
@@ -102,7 +104,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: Push to main/master via refspec. \
              FIX: Create a feature branch and open a PR instead. \
-             REF: CLAUDE.md#commit-convention".into(),
+             REF: CLAUDE.md#commit-convention"
+                .into(),
         );
     }
 
@@ -111,14 +114,16 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: Deleting main/master branch is not allowed. \
              FIX: Do not delete protected branches. \
-             REF: CLAUDE.md#supply-chain-policy".into(),
+             REF: CLAUDE.md#supply-chain-policy"
+                .into(),
         );
     }
     if RE_DELETE_REFSPEC.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting main/master branch via empty refspec is not allowed. \
              FIX: Do not delete protected branches. \
-             REF: CLAUDE.md#supply-chain-policy".into(),
+             REF: CLAUDE.md#supply-chain-policy"
+                .into(),
         );
     }
 
@@ -127,7 +132,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: git push --no-verify bypasses pre-push hooks. \
              FIX: Fix the hook failures instead of skipping them. \
-             REF: CLAUDE.md#lint-suppression-policy".into(),
+             REF: CLAUDE.md#lint-suppression-policy"
+                .into(),
         );
     }
 
@@ -136,7 +142,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: git push --follow-tags pushes ALL matching local tags. \
              FIX: Push tags explicitly: `git push origin <tag>`. \
-             REF: CLAUDE.md#releases".into(),
+             REF: CLAUDE.md#releases"
+                .into(),
         );
     }
 
@@ -145,14 +152,16 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: Deleting semantic version tags is not allowed. \
              FIX: Release a new patch version instead. \
-             REF: CLAUDE.md#releases".into(),
+             REF: CLAUDE.md#releases"
+                .into(),
         );
     }
     if RE_DELETE_REMOTE_TAG.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting remote semantic version tags is not allowed. \
              FIX: Release a new patch version instead. \
-             REF: CLAUDE.md#releases".into(),
+             REF: CLAUDE.md#releases"
+                .into(),
         );
     }
 
@@ -161,7 +170,8 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: git reset --hard origin/main discards all local work. \
              FIX: Use `git stash` or `git reset --soft` instead. \
-             REF: CLAUDE.md#key-design-decisions".into(),
+             REF: CLAUDE.md#key-design-decisions"
+                .into(),
         );
     }
 
