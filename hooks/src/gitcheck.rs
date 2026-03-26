@@ -168,7 +168,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-8: Hard reset to origin/main|master
     if RE_HARD_RESET.is_match(cmd) {
         return GitResult::Block(
-            "WHAT: git reset --hard origin/main discards all local work. \
+            "WHAT: git reset --hard origin/main|master discards all local work. \
              FIX: Use `git stash` or `git reset --soft` instead. \
              REF: CLAUDE.md#key-design-decisions"
                 .into(),
