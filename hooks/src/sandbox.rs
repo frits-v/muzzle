@@ -163,9 +163,14 @@ pub fn check_path_with_context(
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     let rel = extract_rel_path(&resolved, &repo, ws_str);
-                    return PathDecision::Deny(format!(
-                        "REDIRECT: Use worktree path instead: {}/{}/.worktrees/{}/{}",
+                    let wt_path = format!(
+                        "{}/{}/.worktrees/{}/{}",
                         ws_str, repo, sess.short_id, rel
+                    );
+                    return PathDecision::Deny(format!(
+                        "WHAT: Write targets main checkout, not the session worktree. \
+                         FIX: Use the worktree path instead: {wt_path}. \
+                         REF: docs/architecture.md#key-invariants"
                     ));
                 }
             } else {
@@ -190,7 +195,9 @@ pub fn check_path_with_context(
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     return PathDecision::Deny(
-                        "BLOCKED: No worktree for this session. All repo writes are blocked to prevent editing the main checkout.".into(),
+                        "WHAT: No worktree exists and repo name could not be extracted. \
+                         FIX: Ensure the write path is inside a known repo directory. \
+                         REF: docs/architecture.md#key-invariants".into(),
                     );
                 }
 

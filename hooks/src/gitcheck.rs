@@ -72,6 +72,9 @@ static RE_GIT_C_PATH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|(\S+))"#).unwrap());
 
 /// Run all 8 git safety checks against a Bash command.
+///
+/// Denial messages use the WHAT/FIX/REF remediation format so the agent
+/// can self-repair without human intervention.
 pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-1: Force push without --force-with-lease
     if RE_GIT_PUSH.is_match(cmd)
@@ -79,67 +82,86 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         && !RE_FORCE_WITH_LEASE.is_match(cmd)
     {
         return GitResult::Block(
-            "BLOCKED: Force push without --force-with-lease. Use: git push --force-with-lease origin <branch>".into(),
+            "WHAT: Force push without --force-with-lease. \
+             FIX: Use `git push --force-with-lease origin <branch>` instead. \
+             REF: CLAUDE.md#supply-chain-policy".into(),
         );
     }
 
     // FR-GS-2: Push to main/master
     if RE_PUSH_TO_MAIN.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Direct push to main/master. Create a feature branch and open a PR instead."
-                .into(),
+            "WHAT: Direct push to main/master. \
+             FIX: Create a feature branch and open a PR instead. \
+             REF: CLAUDE.md#commit-convention".into(),
         );
     }
 
     // FR-GS-3: Refspec push to main/master
     if RE_REFSPEC_MAIN.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Push to main/master via refspec. Create a feature branch and open a PR instead."
-                .into(),
+            "WHAT: Push to main/master via refspec. \
+             FIX: Create a feature branch and open a PR instead. \
+             REF: CLAUDE.md#commit-convention".into(),
         );
     }
 
     // FR-GS-4: Delete main/master
     if RE_DELETE_MAIN.is_match(cmd) {
-        return GitResult::Block("BLOCKED: Deleting main/master branch is not allowed.".into());
+        return GitResult::Block(
+            "WHAT: Deleting main/master branch is not allowed. \
+             FIX: Do not delete protected branches. \
+             REF: CLAUDE.md#supply-chain-policy".into(),
+        );
     }
     if RE_DELETE_REFSPEC.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Deleting main/master branch via empty refspec is not allowed.".into(),
+            "WHAT: Deleting main/master branch via empty refspec is not allowed. \
+             FIX: Do not delete protected branches. \
+             REF: CLAUDE.md#supply-chain-policy".into(),
         );
     }
 
     // FR-GS-5: --no-verify
     if RE_NO_VERIFY.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: git push --no-verify bypasses pre-push hooks. Fix the hook failures instead."
-                .into(),
+            "WHAT: git push --no-verify bypasses pre-push hooks. \
+             FIX: Fix the hook failures instead of skipping them. \
+             REF: CLAUDE.md#lint-suppression-policy".into(),
         );
     }
 
     // FR-GS-6: --follow-tags
     if RE_FOLLOW_TAGS.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: git push --follow-tags pushes ALL matching local tags. Push tags explicitly: git push origin <tag>".into(),
+            "WHAT: git push --follow-tags pushes ALL matching local tags. \
+             FIX: Push tags explicitly: `git push origin <tag>`. \
+             REF: CLAUDE.md#releases".into(),
         );
     }
 
     // FR-GS-7: Delete semver tags (local and remote)
     if RE_DELETE_SEMVER_TAG.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Deleting semantic version tags is not allowed. Release a new patch version instead.".into(),
+            "WHAT: Deleting semantic version tags is not allowed. \
+             FIX: Release a new patch version instead. \
+             REF: CLAUDE.md#releases".into(),
         );
     }
     if RE_DELETE_REMOTE_TAG.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: Deleting remote semantic version tags is not allowed. Release a new patch version instead.".into(),
+            "WHAT: Deleting remote semantic version tags is not allowed. \
+             FIX: Release a new patch version instead. \
+             REF: CLAUDE.md#releases".into(),
         );
     }
 
     // FR-GS-8: Hard reset to origin/main|master
     if RE_HARD_RESET.is_match(cmd) {
         return GitResult::Block(
-            "BLOCKED: git reset --hard origin/main|master discards all local work. Use: git stash or git reset --soft".into(),
+            "WHAT: git reset --hard origin/main discards all local work. \
+             FIX: Use `git stash` or `git reset --soft` instead. \
+             REF: CLAUDE.md#key-design-decisions".into(),
         );
     }
 
@@ -204,9 +226,9 @@ pub fn check_worktree_enforcement(
                         return Some(crate::worktree_missing_msg(&repo));
                     }
                     return Some(format!(
-                        "BLOCKED: Git op on main checkout ({repo}). \
-                         Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
-                         Tip: run git -C <wt-path> fetch origin before creating new branches"
+                        "WHAT: Git operation targets main checkout ({repo}), not the session worktree. \
+                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead. \
+                         REF: docs/architecture.md#key-invariants"
                     ));
                 }
             }
@@ -228,9 +250,9 @@ pub fn check_worktree_enforcement(
                         return Some(crate::worktree_missing_msg(&repo));
                     }
                     return Some(format!(
-                        "BLOCKED: Git op on main checkout ({repo}). \
-                         Use worktree: {ws_str}/{repo}/.worktrees/{short_id}. \
-                         Tip: run git -C <wt-path> fetch origin before creating new branches"
+                        "WHAT: Git operation targets main checkout ({repo}), not the session worktree. \
+                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead. \
+                         REF: docs/architecture.md#key-invariants"
                     ));
                 }
             }
@@ -241,8 +263,9 @@ pub fn check_worktree_enforcement(
     if !RE_GIT_C.is_match(cmd) && !RE_CD_PATH.is_match(cmd) && RE_GIT_CHECKOUT_SWITCH.is_match(cmd)
     {
         return Some(format!(
-            "BLOCKED: Bare git checkout/switch — worktrees are active. Use: git -C <repo>/.worktrees/{}/ checkout ...",
-            short_id
+            "WHAT: Bare git checkout/switch — worktrees are active. \
+             FIX: Use `git -C <repo>/.worktrees/{short_id}/ checkout ...` instead. \
+             REF: docs/architecture.md#key-invariants"
         ));
     }
 
