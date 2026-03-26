@@ -346,7 +346,7 @@ Reference: harness.md Pillar 1b — agent context file pruning policy.
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
 | claude-md-valid | `cargo test --test claude_md`                            | 3      | CLAUDE.md matches codebase      |
-| shellcheck      | `~/.local/share/mise/installs/shellcheck/0.11.0/shellcheck scripts/*.sh` | 3 | Shell scripts pass shellcheck |
+| shellcheck      | `bash scripts/run-shellcheck.sh` | 3 | Shell scripts pass shellcheck |
 | shfmt           | `shfmt -d -i 2 -ci -bn scripts/*.sh`                    | 2      | Shell scripts formatted (Google)|
 | license-exists  | `test -f LICENSE`                                        | 1      | MIT license file present        |
 | ci-green        | `gh run list -b main -w CI -L 1 --json conclusion -q '.[0].conclusion' \| grep -q success` | 5 | Latest CI workflow on main succeeded |
