@@ -21,11 +21,15 @@ pub mod session;
 pub mod worktree;
 
 /// Format a WORKTREE_MISSING denial message for lazy worktree creation.
+///
+/// Uses the WHAT/FIX/REF remediation format so the agent can self-repair.
 pub fn worktree_missing_msg(repo: &str) -> String {
     let bin = config::bin_dir().join("ensure-worktree");
     format!(
-        "WORKTREE_MISSING:{repo} \
-         — Run: {} {repo}",
+        "WORKTREE_MISSING:{repo} — \
+         WHAT: No worktree exists for repo '{repo}' in this session. \
+         FIX: Run `{} {repo}` to create one, then retry the write. \
+         REF: docs/architecture.md#key-invariants",
         bin.display()
     )
 }
