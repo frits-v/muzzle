@@ -76,7 +76,7 @@ binaries ──→ core modules ──→ infrastructure
 | Module | Purpose |
 |---|---|
 | `store` | SQLite + FTS5 schema, CRUD, search, topic upsert |
-| `capture` | Parse changelog markdown into session summaries |
+| `capture` | Parse changelog Markdown into session summaries |
 | `inject` | Format memories as Markdown for SessionStart injection |
 | `main` | CLI: search, save, capture, context, inject, stats |
 
@@ -104,8 +104,8 @@ These dependency directions are explicitly prohibited:
 | Error handling | Each binary | `catch_unwind` → deny on panic (fail-closed) |
 | Configuration | `hooks/src/config.rs` | Constants + path resolution (workspaces, XDG dirs) |
 | Audit trail | `hooks/src/changelog.rs` | Markdown audit log per session |
-| State storage | `~/.local/state/muzzle/` | XDG state directory for sessions, specs |
-| Memory storage | `~/.muzzle/memory.db` | SQLite + FTS5 database |
+| State storage | `~/.local/state/muzzle/` (default) | XDG state directory for sessions, specs (`XDG_STATE_HOME`) |
+| Memory storage | `~/.muzzle/memory.db` (default) | SQLite + FTS5 database |
 
 ## Key Invariants
 
