@@ -92,7 +92,7 @@ After pushing, poll PR checks and review comments in a single loop for up to 10 
 ## Key Design Decisions
 
 - **Three-layer sandbox**: Session resolution -> context-aware path checking -> git safety regex
-- **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`
+- **H-4 purity**: PreToolUse hook (`permissions`) NEVER writes files. Uses `resolve_readonly()`.
 - **Lazy worktrees**: `WORKTREE_MISSING:<repo>` denials trigger `ensure-worktree` on-demand
 - **Config persistence**: `.agents/`, `.claude/` redirect to main checkout when gitignored; if tracked by git (dir exists in worktree), allowed in-place
 - **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
@@ -177,7 +177,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-219 tests (166 unit + 5 doc + 13 integration + 10 proptest + 25 memory) plus 4 fuzz targets.
+231 tests (178 unit + 4 doc + 17 integration + 10 proptest + 22 memory) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
@@ -230,5 +230,5 @@ Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
 
 ## Dependencies
 
-5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. No async runtime,
-no network deps, no proc macros.
+5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. Memory crate adds
+`rusqlite`. No async runtime, no network deps, no proc macros.
