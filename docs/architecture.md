@@ -44,8 +44,8 @@ on layers below it.
 
 ```
 binaries ──→ core modules ──→ infrastructure
-              │                    ▲
-              └────────────────────┘
+   │                               ▲
+   └───────────────────────────────┘
 ```
 
 - Binaries may import from core modules and infrastructure.
@@ -93,8 +93,8 @@ These dependency directions are explicitly prohibited:
    `async-std`, or equivalent.
 4. **No network dependencies** — no HTTP clients, no API SDKs. All network
    interaction happens through Claude Code's tool system.
-5. **No proc macros** — `serde` derive is via `serde_core` (no proc-macro
-   crate). No other proc macros allowed.
+5. **No proc macros** — `serde_derive` (pulled in by `serde`'s `derive`
+   feature) is the only permitted proc macro. No others may be added.
 
 ## Cross-Cutting Concerns
 
@@ -119,7 +119,7 @@ These dependency directions are explicitly prohibited:
 
 ## External Dependencies
 
-5 runtime crates total (hooks: 5, memory: 1 additional):
+6 runtime crates (hooks: 5, memory adds 1):
 
 | Crate | Used By | Purpose |
 |---|---|---|
