@@ -63,8 +63,9 @@ pub fn check_path_with_context(
     // FR-PS-1: System paths — check BEFORE resolving symlinks
     if is_system_path(&path_str) {
         return PathDecision::Deny(format!(
-            "BLOCKED: Cannot write to system path: {}",
-            raw_path
+            "WHAT: Write to system path {raw_path} is not allowed. \
+             FIX: Write to a project or temp directory instead. \
+             REF: docs/architecture.md#forbidden-dependencies"
         ));
     }
 
@@ -74,8 +75,9 @@ pub fn check_path_with_context(
     // System paths check on resolved path (catches /private/etc, /private/var on macOS)
     if is_system_path(&resolved) || is_private_system_path(&resolved) {
         return PathDecision::Deny(format!(
-            "BLOCKED: Cannot write to system path: {}",
-            raw_path
+            "WHAT: Write to system path {raw_path} is not allowed (resolves to {resolved}). \
+             FIX: Write to a project or temp directory instead. \
+             REF: docs/architecture.md#forbidden-dependencies"
         ));
     }
 
@@ -163,9 +165,12 @@ pub fn check_path_with_context(
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     let rel = extract_rel_path(&resolved, &repo, ws_str);
+                    let wt_path =
+                        format!("{}/{}/.worktrees/{}/{}", ws_str, repo, sess.short_id, rel);
                     return PathDecision::Deny(format!(
-                        "REDIRECT: Use worktree path instead: {}/{}/.worktrees/{}/{}",
-                        ws_str, repo, sess.short_id, rel
+                        "WHAT: Write targets main checkout, not the session worktree. \
+                         FIX: Use the worktree path instead: {wt_path}. \
+                         REF: docs/architecture.md#key-invariants"
                     ));
                 }
             } else {
@@ -190,7 +195,10 @@ pub fn check_path_with_context(
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
                     }
                     return PathDecision::Deny(
-                        "BLOCKED: No worktree for this session. All repo writes are blocked to prevent editing the main checkout.".into(),
+                        "WHAT: No worktree exists and repo name could not be extracted. \
+                         FIX: Ensure the write path is inside a known repo directory. \
+                         REF: docs/architecture.md#key-invariants"
+                            .into(),
                     );
                 }
 

@@ -1,0 +1,108 @@
+{
+  "labels": [],
+  "comment": "",
+  "enabled": true,
+  "fixWithAI": true,
+  "hideFooter": false,
+  "strictness": 2,
+  "statusCheck": true,
+  "commentTypes": [
+    "logic",
+    "syntax",
+    "style"
+  ],
+  "instructions": "",
+  "disabledLabels": [],
+  "excludeAuthors": [
+    "dependabot[bot]",
+    "renovate[bot]"
+  ],
+  "ignoreKeywords": "",
+  "ignorePatterns": "greptile.json\n",
+  "includeAuthors": [],
+  "summarySection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "excludeBranches": [],
+  "fileChangeLimit": 100,
+  "includeBranches": [],
+  "includeKeywords": "",
+  "triggerOnDrafts": false,
+  "triggerOnUpdates": false,
+  "updateSummaryOnly": false,
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "statusCommentsEnabled": true,
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": false
+  },
+  "sequenceDiagramSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "shouldUpdateDescription": false,
+  "commentsOutsideDiffSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "customContext": {
+    "other": [
+      {
+        "scope": [],
+        "content": "This is a Rust workspace providing session isolation hooks and persistent memory for AI coding agents. Read GOALS.md for fitness directives and gates. Read docs/architecture.md for layer diagram, forbidden dependencies, and key invariants. Read CLAUDE.md for build commands, commit convention, and design decisions."
+      }
+    ],
+    "rules": [
+      {
+        "scope": [],
+        "rule": "Every hooks/src/bin/*.rs must use catch_unwind and deny on panic (fail-closed). Exception: persona_inject.rs may fail open. Flag any binary missing catch_unwind or silently passing on panic."
+      },
+      {
+        "scope": [],
+        "rule": "hooks/src/bin/permissions.rs (PreToolUse hook) must NEVER write files. It must use resolve_readonly(), never resolve_readwrite(). No std::fs::write, File::create, or OpenOptions with write. Flag any write I/O added to permissions.rs."
+      },
+      {
+        "scope": [],
+        "rule": "All Block() and Deny() denial messages in gitcheck.rs, sandbox.rs, and lib.rs must contain WHAT:, FIX:, and REF: tokens. Exception: the REDIRECT message for config paths in sandbox.rs (containing 'config path must persist') is exempt. Flag new denial messages missing any of the three fields."
+      },
+      {
+        "scope": [],
+        "rule": "Infrastructure modules (config.rs, output.rs, changelog.rs, log.rs, mcp.rs) must NOT import from core modules (sandbox, gitcheck, session, worktree). memory/ must not depend on hooks/. No async runtimes, network clients, or proc-macro crates beyond serde_derive in Cargo.toml."
+      },
+      {
+        "scope": [],
+        "rule": "When hooks/src/ structure, Cargo.toml binaries, or dependencies change, CLAUDE.md must be updated to match: binary count, architecture tree, dependency count and names, test count. PR title must follow conventional commits: type(scope): description."
+      },
+      {
+        "scope": [],
+        "rule": "Changes to security-critical files (sandbox.rs, gitcheck.rs, session.rs, worktree/) are high-risk and need proportional test coverage. No net test removal. Test code must use fictional repo names (acme-api, web-app), never real company names. No lint suppressions (#[allow(...)], // nolint) without justification in the PR description."
+      }
+    ],
+    "files": [
+      {
+        "scope": [],
+        "path": "GOALS.md",
+        "description": "Fitness goals, directives (with steer values), and gates (with check commands and weights). Higher-weight gates are more critical. Directives steered 'increase' must not regress."
+      },
+      {
+        "scope": [],
+        "path": "docs/architecture.md",
+        "description": "Layer diagram (binaries → core → infra), module map, forbidden dependency directions, cross-cutting concerns, and key invariants (panic=deny, H-4 purity, lazy worktrees)."
+      },
+      {
+        "scope": [],
+        "path": "CLAUDE.md",
+        "description": "Build/test/lint commands, commit convention, design decisions, testing patterns, lint suppression policy, shell style guide. Must stay in sync with codebase (enforced by tests/claude_md.rs)."
+      }
+    ]
+  }
+}

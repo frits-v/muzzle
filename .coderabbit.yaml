@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+early_access: true
+language: en-US
+reviews:
+  request_changes_workflow: true
+  high_level_summary: false
+  high_level_summary_in_walkthrough: true
+  fail_commit_status: true
+  auto_apply_labels: true
+  auto_assign_reviewers: true
+  poem: false
+  slop_detection:
+    label: slop
+  auto_review:
+    enabled: true
+  pre_merge_checks:
+    docstrings:
+      mode: error
+    title:
+      mode: error
+      requirements: >-
+        Must follow conventional commit. The type should match the intent,
+        the description and optional scope should be concise, lowercase and
+        in the imperative mood. Ideally total length should be within 72
+        characters. Breaking changes should be marked with a ! (bang) after
+        the type
+    description:
+      mode: error
+    issue_assessment:
+      mode: error
+    custom_checks:
+      - name: CLAUDE.md stays in sync
+        mode: error
+        instructions: >-
+          When source files under hooks/ or memory/ change (Cargo.toml,
+          src/bin/*, src/lib.rs, src/*.rs), verify CLAUDE.md is updated if
+          any of these are now stale:
+          Binary count matches [[bin]] entries across all Cargo.toml files.
+          Architecture tree lists exactly the files that exist under hooks/src/.
+          Dependency count matches [dependencies] entries in hooks/Cargo.toml.
+          All dependency crate names appear as backtick-quoted words in the
+          Dependencies section.
+          Test count in the Testing section reflects actual test suite sizes.
+          Flag as "must fix" if any claim is provably wrong. Ignore if the
+          PR doesn't touch structural files.
+
+      - name: Panic = deny in all binaries
+        mode: error
+        instructions: >-
+          Every file under hooks/src/bin/*.rs must wrap its main logic in
+          std::panic::catch_unwind and deny (exit non-zero or return a deny
+          JSON response) on panic. The sole exception is persona_inject.rs,
+          which may fail open (persona injection is not a security gate). If
+          a new binary is added or an existing one is modified, verify
+          catch_unwind is present and the panic path produces a deny outcome.
+          Flag if the panic path silently allows the operation. This is a
+          security invariant: hooks must never fail open unless explicitly
+          exempted.
+
+      - name: "H-4 purity: permissions never writes"
+        mode: error
+        instructions: >-
+          hooks/src/bin/permissions.rs (the PreToolUse hook) must NEVER
+          perform file I/O writes. It must use resolve_readonly() from
+          session.rs, never resolve_readwrite(). Check that no
+          std::fs::write, std::fs::File::create, std::fs::OpenOptions with
+          write/append, or any other write syscall is introduced. If the PR
+          adds write operations to permissions.rs, flag as "must fix". This
+          is a structural security boundary.
+
+      - name: Architecture boundaries enforced
+        mode: error
+        instructions: >-
+          Read docs/architecture.md from the repository root. Verify these
+          constraints against the PR diff:
+          Layer direction: infrastructure modules (config.rs, output.rs,
+          changelog.rs, log.rs, mcp.rs) must NOT import from core modules
+          (sandbox, gitcheck, session, worktree). Check use/mod statements.
+          Crate independence: memory/ must not depend on hooks/ and vice
+          versa. Check Cargo.toml changes.
+          Forbidden deps: no async runtimes (tokio, async-std, smol), no
+          network clients (reqwest, hyper, ureq), no proc-macro crates
+          beyond serde_derive. Check Cargo.toml changes.
+          Denial message format: all Block() and Deny() messages in
+          gitcheck.rs, sandbox.rs, and lib.rs must contain WHAT:, FIX:, and
+          REF: tokens. Exception: the REDIRECT message for config paths in
+          sandbox.rs (containing "config path must persist") is exempt.
+          Module placement: new source files must be placed in the correct
+          layer (infra vs core vs binary) per the architecture doc.
+          Only flag issues provably violated by the PR diff.
+
+      - name: Harness engineering principles
+        mode: error
+        instructions: >-
+          Read .agents/research/harness.md and GOALS.md from the repository
+          root for context. Evaluate the PR against these principles:
+          Error messages are instructions: any new error, log, or denial
+          message visible to the agent should be actionable with WHAT went
+          wrong and HOW to fix it. Cryptic messages like "operation failed"
+          without remediation are a flag. (harness Pillar 4a)
+          No silent pass-through: if a check, gate, or hook encounters an
+          error, it must fail closed (deny/block), not silently allow. This
+          applies to catch_unwind paths, file I/O errors, and regex
+          compilation. (harness Pillar 3d)
+          Change risk: flag if the PR modifies security-critical files
+          (sandbox.rs, gitcheck.rs, session.rs, worktree/) without
+          proportional test coverage. These are high-risk paths. (harness
+          Pillar 3a, GOALS directive 23)
+          Test quality: the PR should not remove tests without replacing
+          them. Test code must use fictional repo names (acme-api, web-app),
+          never real company names. Property-based tests should cover
+          sandbox and gitcheck changes. (GOALS directives 4, 10)
+          Only flag concrete violations visible in the diff.
+
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  labeling:
+    auto_apply_labels: true
