@@ -63,8 +63,9 @@ pub fn check_path_with_context(
     // FR-PS-1: System paths — check BEFORE resolving symlinks
     if is_system_path(&path_str) {
         return PathDecision::Deny(format!(
-            "BLOCKED: Cannot write to system path: {}",
-            raw_path
+            "WHAT: Write to system path {raw_path} is not allowed. \
+             FIX: Write to a project or temp directory instead. \
+             REF: docs/architecture.md#forbidden-dependencies"
         ));
     }
 
@@ -74,8 +75,9 @@ pub fn check_path_with_context(
     // System paths check on resolved path (catches /private/etc, /private/var on macOS)
     if is_system_path(&resolved) || is_private_system_path(&resolved) {
         return PathDecision::Deny(format!(
-            "BLOCKED: Cannot write to system path: {}",
-            raw_path
+            "WHAT: Write to system path {raw_path} is not allowed (resolves to {resolved}). \
+             FIX: Write to a project or temp directory instead. \
+             REF: docs/architecture.md#forbidden-dependencies"
         ));
     }
 
