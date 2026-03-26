@@ -873,4 +873,195 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&tmp);
     }
+
+    #[test]
+    fn test_format_entry_notebook_edit() {
+        let entry = format_entry(
+            "NotebookEdit",
+            &InputFields {
+                notebook_path: "/notebooks/analysis.ipynb".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("**NotebookEdit**"));
+        assert!(entry.contains("/notebooks/analysis.ipynb"));
+    }
+
+    #[test]
+    fn test_format_entry_github_branch() {
+        let entry = format_entry(
+            "mcp__github__create_branch",
+            &InputFields {
+                repo: "acme/web-app".into(),
+                branch: "feat/new-feature".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("**Branch Created**"));
+        assert!(entry.contains("acme/web-app"));
+        assert!(entry.contains("feat/new-feature"));
+    }
+
+    #[test]
+    fn test_format_entry_github_issue() {
+        let entry = format_entry(
+            "mcp__github__create_issue",
+            &InputFields {
+                repo: "acme/web-app".into(),
+                title: "Bug: login fails".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("**GitHub Issue**"));
+        assert!(entry.contains("acme/web-app"));
+        assert!(entry.contains("Bug: login fails"));
+    }
+
+    #[test]
+    fn test_format_entry_jira_issue_alternate_prefix() {
+        let entry = format_entry(
+            "mcp__atlassian__createJiraIssue",
+            &InputFields {
+                project_key: "ENG".into(),
+                summary: "Refactor auth module".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("**Jira Issue**"));
+        assert!(entry.contains("ENG"));
+    }
+
+    #[test]
+    fn test_format_entry_unknown_mcp_tool() {
+        let entry = format_entry(
+            "mcp__slack__send_message",
+            &InputFields::default(),
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("mcp__slack__send_message"));
+    }
+
+    #[test]
+    fn test_format_entry_unknown_tool() {
+        let entry = format_entry(
+            "SomeNewTool",
+            &InputFields::default(),
+            &OutputFields::default(),
+        );
+        assert!(entry.contains("**SomeNewTool**"));
+    }
+
+    #[test]
+    fn test_is_read_only_mcp_mutating_tools() {
+        let tools = [
+            "mcp__github__create_pull_request",
+            "mcp__atlassian__createJiraIssue",
+            "mcp__claude_ai_Atlassian__createJiraIssue",
+        ];
+        for tool in &tools {
+            assert!(
+                !is_read_only(tool, &InputFields::default()),
+                "{} should NOT be read-only",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_read_only_bash_gh_read_commands() {
+        let cmds = [
+            "gh pr view 123",
+            "gh pr checks 123",
+            "gh issue list",
+            "gh run view 456",
+        ];
+        for cmd in &cmds {
+            let input = InputFields {
+                command: cmd.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                is_read_only("Bash", &input),
+                "Bash {:?} should be read-only",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_days_to_date_known_dates() {
+        // 2000-03-01 = 11017 days since epoch
+        let (y, m, d) = days_to_date(11017);
+        assert_eq!((y, m, d), (2000, 3, 1));
+
+        // 2026-03-26 = 20538 days since epoch
+        let (y, m, d) = days_to_date(20538);
+        assert_eq!((y, m, d), (2026, 3, 26));
+
+        // Leap day: 2024-02-29 = 19782
+        let (y, m, d) = days_to_date(19782);
+        assert_eq!((y, m, d), (2024, 2, 29));
+    }
+
+    #[test]
+    fn test_extract_first_word_newline_separator() {
+        assert_eq!(extract_first_word("cmd\narg1"), "cmd");
+    }
+
+    #[test]
+    fn test_extract_push_arg_multiple_flags() {
+        assert_eq!(
+            extract_push_arg("git push -u --force origin main", 1),
+            "origin"
+        );
+        assert_eq!(
+            extract_push_arg("git push -u --force origin main", 2),
+            "main"
+        );
+    }
+
+    #[test]
+    fn test_format_entry_bash_commit_no_output() {
+        let entry = format_entry(
+            "Bash",
+            &InputFields {
+                command: "git commit -m 'empty'".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        // No commit SHA in output, falls through to generic Bash format
+        assert!(entry.contains("**Bash**"));
+    }
+
+    #[test]
+    fn test_format_entry_bash_push_no_remote() {
+        let entry = format_entry(
+            "Bash",
+            &InputFields {
+                command: "git push".into(),
+                ..Default::default()
+            },
+            &OutputFields::default(),
+        );
+        // No remote arg extracted, falls through to generic
+        assert!(entry.contains("**Bash**") || entry.contains("**PUSH**"));
+    }
+
+    #[test]
+    fn test_input_fields_from_value_wrong_types() {
+        let v = serde_json::json!({
+            "command": 42,
+            "file_path": true,
+            "repo": null
+        });
+        let fields = InputFields::from_value(&v);
+        assert_eq!(fields.command, "");
+        assert_eq!(fields.file_path, "");
+        assert_eq!(fields.repo, "");
+    }
 }
