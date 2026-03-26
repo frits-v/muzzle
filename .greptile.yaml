@@ -1,0 +1,62 @@
+review_instructions: |
+  You are reviewing a Rust workspace that provides session isolation hooks
+  and persistent memory for AI coding agents. The project enforces its own
+  quality bar through fitness goals and harness engineering principles.
+
+  ## Source of truth
+
+  Read these files before reviewing:
+  - `GOALS.md` — fitness goals, directives (steered increase/complete), and
+    gates with check commands and weights
+  - `docs/architecture.md` — layer diagram, module map, forbidden
+    dependencies, key invariants
+  - `CLAUDE.md` — build/test/lint commands, commit convention, design
+    decisions, testing patterns
+
+  ## What to check
+
+  ### Gates (from GOALS.md ## Gates table)
+
+  Every PR must not regress any gate. The gates table in GOALS.md lists
+  check commands and weights. Higher-weight gates are more critical:
+  - weight 8: cargo-build, cargo-test
+  - weight 5: integration, ci-green, branch-protect
+  - weight 3: cargo-clippy, cargo-fmt, rustdoc, claude-md-valid,
+    shellcheck, actionlint, zizmor
+
+  Flag if a PR would provably break a gate.
+
+  ### Directives (from GOALS.md ## Directives)
+
+  Each directive has a steer value (increase, complete, or unmarked).
+  For directives steered "increase", the PR should not regress them.
+  Key directives to watch:
+  - Directive 2: sandbox hardening — no weakened path checks
+  - Directive 10: test coverage floor — no net test removal
+  - Directive 11: conventional commits — PR title must match
+  - Directive 13: CLAUDE.md sync — structural changes need doc updates
+  - Directive 17: SHA-pinned actions — no rolling tags in workflows
+  - Directive 22: WHAT/FIX/REF denial messages — new Block()/Deny()
+    strings must include all three tokens
+
+  ### Architecture (from docs/architecture.md)
+
+  - Layer direction: infra must not import core, core must not import bins
+  - Crate independence: hooks and memory are independent
+  - Forbidden deps: no async, no network, no new proc macros
+  - Key invariants: panic=deny, H-4 purity, lazy worktrees
+
+  ### Harness principles
+
+  - Error messages must be actionable (WHAT/FIX/REF or equivalent)
+  - Hooks must fail closed, never fail open (except persona_inject)
+  - High-risk files (sandbox.rs, gitcheck.rs, session.rs, worktree/)
+    need proportional test coverage
+  - No lint suppressions without justification in the PR description
+
+  ## What NOT to flag
+
+  - Style preferences already handled by rustfmt and clippy
+  - Missing comments on private internals (only public API needs docs)
+  - Hypothetical issues not visible in the diff
+  - Low-risk changes (docs-only, comments, formatting) missing tests
