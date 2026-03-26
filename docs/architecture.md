@@ -77,7 +77,7 @@ binaries ──→ core modules ──→ infrastructure
 |---|---|
 | `store` | SQLite + FTS5 schema, CRUD, search, topic upsert |
 | `capture` | Parse changelog markdown into session summaries |
-| `inject` | Format memories as markdown for SessionStart injection |
+| `inject` | Format memories as Markdown for SessionStart injection |
 | `main` | CLI: search, save, capture, context, inject, stats |
 
 ## Forbidden Dependencies
