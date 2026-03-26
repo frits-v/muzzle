@@ -6,7 +6,7 @@ for AI coding agents (currently targeting Claude Code hooks).
 
 ## Crate Map
 
-```
+```text
 muzzle (workspace)
 ├── hooks/    muzzle-hooks   5 binaries   Session isolation + sandbox enforcement
 └── memory/   muzzle-memory  1 binary     Persistent cross-project memory (SQLite + FTS5)
@@ -21,7 +21,7 @@ versions (`serde`, `serde_json`).
 `muzzle-hooks` follows a three-layer architecture. Each layer depends only
 on layers below it.
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  Binaries (bin/)                                │
 │  session-start, permissions, changelog,         │
@@ -42,7 +42,7 @@ on layers below it.
 
 ### Dependency Direction
 
-```
+```text
 binaries ──→ core modules ──→ infrastructure
    │                               ▲
    └───────────────────────────────┘
