@@ -15,3 +15,8 @@
 {"cycle":15,"target":"directive-19-codeowners-branch-protect","result":"improved","canonical_sha":"3fafd23","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:35:42-07:00"}
 {"cycle":16,"target":"directive-19-release-please-ci-trigger","result":"improved","canonical_sha":"79544f7","goals_passing":9,"goals_total":9,"timestamp":"2026-03-15T22:40:05-07:00"}
 {"cycle":17,"target":"directive-21-architecture-doc","result":"improved","timestamp":"2026-03-25T22:52:00-07:00","goals_passing":12,"goals_total":19}
+{"cycle":18,"target":"fix-goals-gate-commands","result":"improved","canonical_sha":"f231d54","goals_passing":18,"goals_total":19,"timestamp":"2026-03-26T08:50:00-07:00"}
+{"cycle":19,"target":"test-output-log-coverage","result":"improved","canonical_sha":"00ffcc3","goals_passing":18,"goals_total":19,"tests_before":188,"tests_after":199,"timestamp":"2026-03-26T09:05:00-07:00"}
+{"cycle":20,"target":"test-changelog-coverage","result":"improved","canonical_sha":"3eb535d","goals_passing":18,"goals_total":19,"tests_before":199,"tests_after":213,"timestamp":"2026-03-26T09:10:00-07:00"}
+{"cycle":21,"target":"test-mcp-routing-coverage","result":"improved","canonical_sha":"95abeb2","goals_passing":18,"goals_total":19,"tests_before":213,"tests_after":223,"timestamp":"2026-03-26T09:15:00-07:00"}
+{"cycle":22,"target":"docs-update-test-count","result":"improved","canonical_sha":"e1fea10","goals_passing":18,"goals_total":19,"timestamp":"2026-03-26T09:18:00-07:00"}

@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 220 tests (166 hooks unit + 5 doc + 13 hooks integration + 10 proptest + 22 memory unit + 4 memory integration). Do not regress.
+Current: 281 tests (223 hooks unit + 5 claude_md + 17 integration + 10 proptest + 22 memory unit + 4 memory integration). Do not regress.
 
 **Steer:** increase
 
