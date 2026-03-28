@@ -1,6 +1,11 @@
 //! MCP tool routing decisions.
 //!
-//! FR-MR-1 through FR-MR-7: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig routing.
+//! FR-MR-1 through FR-MR-9: GitHub, Atlassian, Datadog, Sentry, Slack, Sysdig,
+//! context7, datadog-mcp, and codebase-memory-mcp routing.
+//!
+//! context7 and codebase-memory-mcp use explicit tool enumeration; datadog-mcp
+//! uses verb-prefix matching (consistent with FR-MR-3). All three fall through
+//! to Ask for unrecognized tools.
 //!
 //! Atlassian rate limiting: Writes rate-limit counters to `.claude-tmp/{session-id}/rate-limits/`.
 //! This is an acceptable side effect — writing to our own scratch space (same exception
@@ -49,6 +54,18 @@ pub fn route_with_session(tool_name: &str, session_id: Option<&str>) -> McpDecis
     }
     if let Some(action) = tool_name.strip_prefix("mcp__sysdig__") {
         return route_sysdig(action);
+    }
+    // FR-MR-8: context7 — documentation lookup only
+    if let Some(action) = tool_name.strip_prefix("mcp__plugin_context7_context7__") {
+        return route_context7(action);
+    }
+    // FR-MR-8b: datadog-mcp — read-only observability queries
+    if let Some(action) = tool_name.strip_prefix("mcp__datadog-mcp__") {
+        return route_datadog_mcp(action);
+    }
+    // FR-MR-9: Codebase-memory-mcp — read/write split
+    if let Some(action) = tool_name.strip_prefix("mcp__codebase-memory-mcp__") {
+        return route_codebase_memory(action);
     }
     if tool_name.starts_with("mcp__") {
         // FR-MR-7: Unknown MCP tools -> ASK
@@ -264,6 +281,63 @@ fn route_sysdig(action: &str) -> McpDecision {
     ))
 }
 
+/// FR-MR-8: context7 routing — documentation lookups.
+///
+/// Two tools today: resolve-library-id and query-docs (plugin name from
+/// context7@claude-plugins-official; upstream @upstash/context7-mcp uses
+/// get-library-docs — our install exposes query-docs).
+/// Unknown tools fall through to Ask for safety against future additions.
+fn route_context7(action: &str) -> McpDecision {
+    match action {
+        "resolve-library-id" | "query-docs" => McpDecision::Allow,
+        _ => McpDecision::Ask(format!(
+            "context7 tool '{}' — unknown operation, requires confirmation",
+            action
+        )),
+    }
+}
+
+/// FR-MR-8b: datadog-mcp routing (separate from FR-MR-3 `mcp__datadog__`).
+///
+/// All current tools are read-only observability queries (analyze, search, get, check).
+/// Unknown tools fall through to Ask for safety against future write additions.
+fn route_datadog_mcp(action: &str) -> McpDecision {
+    if action.starts_with("analyze_")
+        || action.starts_with("search_")
+        || action.starts_with("get_")
+        || action.starts_with("check_")
+        || action.starts_with("list_")
+    {
+        return McpDecision::Allow;
+    }
+    McpDecision::Ask(format!(
+        "datadog-mcp tool '{}' — unknown operation, requires confirmation",
+        action
+    ))
+}
+
+/// FR-MR-9: Codebase-memory-mcp routing.
+///
+/// Read-only graph/search queries are allowed; write operations (indexing,
+/// ingestion, deletion, ADR management) require confirmation.
+fn route_codebase_memory(action: &str) -> McpDecision {
+    match action {
+        "get_architecture" | "get_code_snippet" | "get_graph_schema" | "search_code"
+        | "search_graph" | "query_graph" | "trace_call_path" | "list_projects" | "index_status" => {
+            McpDecision::Allow
+        }
+        "index_repository" | "ingest_traces" | "delete_project" | "manage_adr"
+        | "detect_changes" => McpDecision::Ask(format!(
+            "Codebase-memory write ({}) — modifies persistent storage, confirm before executing",
+            action
+        )),
+        _ => McpDecision::Ask(format!(
+            "Codebase-memory MCP tool '{}' — unknown tool, requires confirmation",
+            action
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,6 +541,98 @@ mod tests {
             let d = route(tool);
             assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
         }
+    }
+
+    // FR-MR-8: context7
+    #[test]
+    fn test_context7_allow() {
+        let tools = [
+            "mcp__plugin_context7_context7__resolve-library-id",
+            "mcp__plugin_context7_context7__query-docs",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_context7_unknown_ask() {
+        let d = route("mcp__plugin_context7_context7__delete-library");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown context7 tool"
+        );
+    }
+
+    #[test]
+    fn test_datadog_mcp_read_allow() {
+        let tools = [
+            "mcp__datadog-mcp__analyze_datadog_logs",
+            "mcp__datadog-mcp__search_datadog_logs",
+            "mcp__datadog-mcp__get_datadog_metric",
+            "mcp__datadog-mcp__check_datadog_mcp_setup",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_datadog_mcp_unknown_ask() {
+        let d = route("mcp__datadog-mcp__delete_something");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown datadog-mcp tool"
+        );
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_read_allow() {
+        let tools = [
+            "mcp__codebase-memory-mcp__get_architecture",
+            "mcp__codebase-memory-mcp__get_code_snippet",
+            "mcp__codebase-memory-mcp__get_graph_schema",
+            "mcp__codebase-memory-mcp__search_code",
+            "mcp__codebase-memory-mcp__search_graph",
+            "mcp__codebase-memory-mcp__query_graph",
+            "mcp__codebase-memory-mcp__trace_call_path",
+            "mcp__codebase-memory-mcp__list_projects",
+            "mcp__codebase-memory-mcp__index_status",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_write_ask() {
+        let tools = [
+            "mcp__codebase-memory-mcp__index_repository",
+            "mcp__codebase-memory-mcp__ingest_traces",
+            "mcp__codebase-memory-mcp__delete_project",
+            "mcp__codebase-memory-mcp__manage_adr",
+            "mcp__codebase-memory-mcp__detect_changes",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert!(
+                matches!(d, McpDecision::Ask(_)),
+                "expected ASK for {}",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn test_codebase_memory_mcp_unknown_ask() {
+        let d = route("mcp__codebase-memory-mcp__some_future_tool");
+        assert!(
+            matches!(d, McpDecision::Ask(_)),
+            "expected ASK for unknown codebase-memory-mcp tool"
+        );
     }
 
     // FR-MR-7: Unknown MCP
