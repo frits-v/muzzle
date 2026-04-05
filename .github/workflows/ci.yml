@@ -36,7 +36,7 @@ jobs:
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup default stable
-      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -51,7 +51,7 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
       - name: License exists
         run: test -f LICENSE
-      - uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - name: Shell lint (shellcheck + shfmt)
         run: |
           set -euo pipefail
@@ -77,7 +77,7 @@ jobs:
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -110,7 +110,7 @@ jobs:
           [[ "${RUNNER_DEBUG:-}" == "1" ]] && set -x
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@c1ecc8f748cd28cdeabf76dab3cccde4ce692fe4 # v4.0.0
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - name: actionlint
         run: mise exec -- actionlint
       - name: zizmor (pedantic)
