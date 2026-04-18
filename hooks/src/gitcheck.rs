@@ -286,8 +286,13 @@ pub fn check_worktree_enforcement(
 pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
+    // Redirect/tee scanning must ignore content inside quoted strings:
+    // `>` and path-like tokens inside an argument like
+    // `--description "foo/<name>/modules/"` are literal text, not shell syntax.
+    let unquoted = strip_quoted(cmd);
+
     // Redirect targets
-    for caps in RE_REDIRECT.captures_iter(cmd) {
+    for caps in RE_REDIRECT.captures_iter(&unquoted) {
         if let Some(m) = caps.get(1) {
             let p = m.as_str().trim();
             if p.starts_with('/') {
@@ -297,7 +302,7 @@ pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     }
 
     // Tee targets
-    for caps in RE_TEE.captures_iter(cmd) {
+    for caps in RE_TEE.captures_iter(&unquoted) {
         if let Some(m) = caps.get(1) {
             let p = m.as_str().trim();
             if p.starts_with('/') {
@@ -306,7 +311,8 @@ pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
         }
     }
 
-    // git -C path (prefixed to distinguish)
+    // git -C path — uses original cmd because the regex handles quoting itself
+    // and a quoted `-C` argument is a real working-directory reference.
     for caps in RE_GIT_C_PATH.captures_iter(cmd) {
         if let Some(m) = caps.get(1) {
             let p = m
@@ -319,6 +325,32 @@ pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     }
 
     paths
+}
+
+/// Replace single- and double-quoted segments with spaces so that write-path
+/// regexes see only unquoted shell syntax. Unterminated quotes swallow the
+/// remainder of the command — the scanner stays conservative rather than
+/// re-emitting text that could itself be misread.
+fn strip_quoted(cmd: &str) -> String {
+    let mut out = String::with_capacity(cmd.len());
+    let mut chars = cmd.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' | '\'' => {
+                let quote = c;
+                out.push(' ');
+                for nc in chars.by_ref() {
+                    if nc == quote {
+                        out.push(' ');
+                        break;
+                    }
+                    out.push(' ');
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Check if a path is a main checkout (not .worktrees/ or .claude-tmp/).
@@ -766,6 +798,42 @@ mod tests {
         assert!(
             !paths.iter().any(|p| p == "relative.txt"),
             "should not extract relative paths: {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_ignore_quoted_content() {
+        // Angle-bracket placeholders inside quoted description strings must
+        // not be mistaken for shell redirects. Previously `<name>/modules/`
+        // matched the RE_REDIRECT pattern because `>` followed by `/modules/`
+        // looked like `> /modules/`, triggering FR-PS-7 false positives.
+        let cases = [
+            r#"bd create --description "services/<name>/modules/foo""#,
+            r#"bd create --description 'services/<name>/modules/foo'"#,
+            r#"echo "redirect to >/etc/passwd in docs""#,
+            r#"gh issue create --body "see <path>/usr/local/bin""#,
+        ];
+        for cmd in &cases {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "expected no write paths for {:?}, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_bash_write_paths_still_catches_real_redirects() {
+        // Guard against over-eager quote stripping: real redirects outside
+        // quotes must still be extracted.
+        let paths = check_bash_write_paths(r#"echo "some <name> text" > /tmp/out.log"#);
+        assert!(
+            paths.iter().any(|p| p == "/tmp/out.log"),
+            "should still catch real redirect, got {:?}",
             paths
         );
     }
