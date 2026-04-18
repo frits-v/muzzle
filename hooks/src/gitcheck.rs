@@ -1001,6 +1001,23 @@ mod tests {
     }
 
     #[test]
+    fn test_bash_write_paths_escaped_quote_inside_double_quoted_arg() {
+        // Bash: `"foo \" > /tmp/evil"` is a single quoted argument whose
+        // content contains `"`, ` > /tmp/evil`. The `>` is *inside* the
+        // quoted argument and must not be treated as a redirect. A naive
+        // quote-stripper that closed the quote at `\"` would leak
+        // `/tmp/evil` back out and produce a false positive (or, worse,
+        // miss a real write if paired with the wrong heuristic).
+        let paths = check_bash_write_paths(r#"echo "foo \" > /tmp/evil""#);
+        let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+        assert!(
+            non_gitc.is_empty(),
+            "escaped quote must not break out of quoted arg, got {:?}",
+            non_gitc
+        );
+    }
+
+    #[test]
     fn test_is_repo_git_op() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let fixed_ws = "/tmp/muzzle-test-ws";
