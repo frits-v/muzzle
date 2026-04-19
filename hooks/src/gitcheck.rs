@@ -63,13 +63,9 @@ static RE_CD_PATH: LazyLock<Regex> =
 static RE_GIT_CHECKOUT_SWITCH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bgit\s+(checkout|switch)\b").unwrap());
 
-// Bash write-path extraction regexes
-static RE_REDIRECT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[12]?>>?\s*(/[^\s;|&)]+)").unwrap());
-static RE_TEE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\btee\s+(?:-a\s+)?(/[^\s]+)").unwrap());
-static RE_GIT_C_PATH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\bgit\s+-C\s+("[^"]+"|'[^']+'|(\S+))"#).unwrap());
+// Bash write-path extraction uses a tokenizer instead of regex so quoting,
+// fd-redirect digits, and operators without surrounding whitespace are all
+// handled correctly. See `tokenize_bash` and `check_bash_write_paths`.
 
 /// Run all 8 git safety checks against a Bash command.
 ///
@@ -282,40 +278,177 @@ pub fn check_worktree_enforcement(
     None
 }
 
+/// Token yielded by `tokenize_bash`.
+#[derive(Debug, PartialEq)]
+enum BashToken {
+    /// A word — the concatenation of unquoted and quoted parts between
+    /// shell-metacharacter boundaries.
+    Word(String),
+    /// A write redirect: `>`, `>>`, `1>`, `2>`, `1>>`, `2>>`, `&>`, `&>>`.
+    Redirect,
+    /// A command separator: `|`, `||`, `&`, `&&`, `;`.
+    Separator,
+}
+
+/// Minimal Bash tokenizer used by `check_bash_write_paths`.
+///
+/// Handles single/double quotes, backslash escapes, and the write-redirect
+/// and command-separator operators we care about. Input redirect (`<`) is
+/// intentionally ignored — we only sandbox writes.
+fn tokenize_bash(cmd: &str) -> Vec<BashToken> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut cur_has_quoted = false;
+    let mut chars = cmd.chars().peekable();
+
+    fn flush(cur: &mut String, has_q: &mut bool, tokens: &mut Vec<BashToken>) {
+        if !cur.is_empty() || *has_q {
+            tokens.push(BashToken::Word(std::mem::take(cur)));
+            *has_q = false;
+        }
+    }
+
+    while let Some(c) = chars.next() {
+        match c {
+            ' ' | '\t' | '\n' => flush(&mut cur, &mut cur_has_quoted, &mut tokens),
+            '\'' => {
+                cur_has_quoted = true;
+                for nc in chars.by_ref() {
+                    if nc == '\'' {
+                        break;
+                    }
+                    cur.push(nc);
+                }
+            }
+            '"' => {
+                cur_has_quoted = true;
+                while let Some(nc) = chars.next() {
+                    if nc == '"' {
+                        break;
+                    }
+                    if nc == '\\' {
+                        if let Some(&esc) = chars.peek() {
+                            cur.push(esc);
+                            chars.next();
+                        }
+                    } else {
+                        cur.push(nc);
+                    }
+                }
+            }
+            '\\' => {
+                if let Some(&nc) = chars.peek() {
+                    cur.push(nc);
+                    chars.next();
+                }
+            }
+            '>' => {
+                // A leading `1`/`2` on the current word is an fd specifier for
+                // this redirect, not part of a preceding word.
+                if cur.as_str() == "1" || cur.as_str() == "2" {
+                    cur.clear();
+                }
+                flush(&mut cur, &mut cur_has_quoted, &mut tokens);
+                if chars.peek() == Some(&'>') {
+                    chars.next();
+                }
+                tokens.push(BashToken::Redirect);
+            }
+            '|' => {
+                flush(&mut cur, &mut cur_has_quoted, &mut tokens);
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                }
+                tokens.push(BashToken::Separator);
+            }
+            '&' => {
+                flush(&mut cur, &mut cur_has_quoted, &mut tokens);
+                if chars.peek() == Some(&'>') {
+                    // `&>` and `&>>` combine stdout+stderr redirect
+                    chars.next();
+                    if chars.peek() == Some(&'>') {
+                        chars.next();
+                    }
+                    tokens.push(BashToken::Redirect);
+                } else {
+                    if chars.peek() == Some(&'&') {
+                        chars.next();
+                    }
+                    tokens.push(BashToken::Separator);
+                }
+            }
+            ';' => {
+                flush(&mut cur, &mut cur_has_quoted, &mut tokens);
+                tokens.push(BashToken::Separator);
+            }
+            _ => cur.push(c),
+        }
+    }
+    flush(&mut cur, &mut cur_has_quoted, &mut tokens);
+    tokens
+}
+
 /// Extract write-target paths from a Bash command.
+///
+/// Tokenizes the command (honoring shell quoting) and walks the token stream
+/// to find absolute paths that would actually be written. This avoids the
+/// regex-on-raw-string pitfall where `>` inside a quoted argument — e.g.
+/// `--description "foo/<name>/modules/"` — was mistaken for a redirect.
 pub fn check_bash_write_paths(cmd: &str) -> Vec<String> {
     let mut paths = Vec::new();
+    let tokens = tokenize_bash(cmd);
 
-    // Redirect targets
-    for caps in RE_REDIRECT.captures_iter(cmd) {
-        if let Some(m) = caps.get(1) {
-            let p = m.as_str().trim();
-            if p.starts_with('/') {
-                paths.push(p.to_string());
+    let mut i = 0;
+    while i < tokens.len() {
+        match &tokens[i] {
+            BashToken::Redirect => {
+                if let Some(BashToken::Word(target)) = tokens.get(i + 1) {
+                    if target.starts_with('/') {
+                        paths.push(target.clone());
+                    }
+                }
+                i += 2;
+                continue;
             }
-        }
-    }
-
-    // Tee targets
-    for caps in RE_TEE.captures_iter(cmd) {
-        if let Some(m) = caps.get(1) {
-            let p = m.as_str().trim();
-            if p.starts_with('/') {
-                paths.push(p.to_string());
+            BashToken::Word(w) if w == "tee" => {
+                let mut j = i + 1;
+                // Skip tee flags like -a, -i, --append
+                while let Some(BashToken::Word(fw)) = tokens.get(j) {
+                    if fw.starts_with('-') {
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if let Some(BashToken::Word(target)) = tokens.get(j) {
+                    if target.starts_with('/') {
+                        paths.push(target.clone());
+                    }
+                }
+                i = j + 1;
+                continue;
             }
-        }
-    }
-
-    // git -C path (prefixed to distinguish)
-    for caps in RE_GIT_C_PATH.captures_iter(cmd) {
-        if let Some(m) = caps.get(1) {
-            let p = m
-                .as_str()
-                .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
-            if p.starts_with('/') {
-                paths.push(format!("gitc:{}", p));
+            BashToken::Word(w) if w == "git" => {
+                // Scan forward to the next separator for a -C argument.
+                let mut j = i + 1;
+                while let Some(tok) = tokens.get(j) {
+                    match tok {
+                        BashToken::Separator => break,
+                        BashToken::Word(fw) if fw == "-C" => {
+                            if let Some(BashToken::Word(target)) = tokens.get(j + 1) {
+                                if target.starts_with('/') {
+                                    paths.push(format!("gitc:{}", target));
+                                }
+                            }
+                            break;
+                        }
+                        _ => j += 1,
+                    }
+                }
             }
+            _ => {}
         }
+        i += 1;
     }
 
     paths
@@ -767,6 +900,120 @@ mod tests {
             !paths.iter().any(|p| p == "relative.txt"),
             "should not extract relative paths: {:?}",
             paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_ignore_quoted_content() {
+        // Angle-bracket placeholders and other path-like tokens inside
+        // quoted arguments are literal text, not shell syntax. They must
+        // not be mistaken for redirects or tee targets.
+        let cases = [
+            r#"bd create --description "services/<name>/modules/foo""#,
+            r#"bd create --description 'services/<name>/modules/foo'"#,
+            r#"echo "redirect to >/etc/passwd in docs""#,
+            r#"gh issue create --body "see <path>/usr/local/bin""#,
+            r#"gh pr comment --body 'pipe to tee /etc/shadow here'"#,
+        ];
+        for cmd in &cases {
+            let paths = check_bash_write_paths(cmd);
+            let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+            assert!(
+                non_gitc.is_empty(),
+                "expected no write paths for {:?}, got {:?}",
+                cmd,
+                non_gitc
+            );
+        }
+    }
+
+    #[test]
+    fn test_bash_write_paths_quoted_redirect_target() {
+        // A legitimately quoted redirect target must still be caught —
+        // this is the case the prior regex-based scanner missed entirely.
+        let cases = [
+            (r#"echo hi > "/tmp/output.log""#, "/tmp/output.log"),
+            (r#"echo hi > '/tmp/output.log'"#, "/tmp/output.log"),
+            (r#"echo hi >"/etc/passwd""#, "/etc/passwd"),
+            (r#"cat f | tee "/tmp/teed.log""#, "/tmp/teed.log"),
+        ];
+        for (cmd, expected) in &cases {
+            let paths = check_bash_write_paths(cmd);
+            assert!(
+                paths.iter().any(|p| p == expected),
+                "expected {:?} in paths for {:?}, got {:?}",
+                expected,
+                cmd,
+                paths
+            );
+        }
+    }
+
+    #[test]
+    fn test_bash_write_paths_fd_redirects_not_captured_as_paths() {
+        // `2>&1` is an fd-to-fd redirect; `&1` is not a path. Similarly
+        // `1> /tmp/foo` targets fd 1 (stdout) to /tmp/foo — we want the path.
+        let paths = check_bash_write_paths("cmd 1> /tmp/out 2>&1");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/out"),
+            "should capture fd-1 redirect target, got {:?}",
+            paths
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("&1")),
+            "should not capture &1 as a path, got {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_no_whitespace_redirect() {
+        // `cmd>/tmp/foo` (no whitespace) is a valid redirect and must be caught.
+        let paths = check_bash_write_paths("echo hi>/tmp/nospace.log");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/nospace.log"),
+            "should capture no-whitespace redirect, got {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_combined_stdout_stderr_redirect() {
+        // `&>` and `&>>` redirect both stdout and stderr.
+        let paths = check_bash_write_paths("cmd &> /tmp/all.log");
+        assert!(
+            paths.iter().any(|p| p == "/tmp/all.log"),
+            "should capture &> target, got {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_git_c_across_separator() {
+        // `-C` after a `;` belongs to a different command — the first `git`
+        // should not consume it.
+        let paths = check_bash_write_paths("git status; foo -C /tmp/notgit");
+        assert!(
+            !paths.iter().any(|p| p.starts_with("gitc:")),
+            "git -C scan must stop at command separator, got {:?}",
+            paths
+        );
+    }
+
+    #[test]
+    fn test_bash_write_paths_escaped_quote_inside_double_quoted_arg() {
+        // Bash: `"foo \" > /tmp/evil"` is a single quoted argument whose
+        // content contains `"`, ` > /tmp/evil`. The `>` is *inside* the
+        // quoted argument and must not be treated as a redirect. A naive
+        // quote-stripper that closed the quote at `\"` would leak
+        // `/tmp/evil` back out and produce a false positive (or, worse,
+        // miss a real write if paired with the wrong heuristic).
+        let paths = check_bash_write_paths(r#"echo "foo \" > /tmp/evil""#);
+        let non_gitc: Vec<_> = paths.iter().filter(|p| !p.starts_with("gitc:")).collect();
+        assert!(
+            non_gitc.is_empty(),
+            "escaped quote must not break out of quoted arg, got {:?}",
+            non_gitc
         );
     }
 
