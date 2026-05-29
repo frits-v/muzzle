@@ -1,16 +1,10 @@
 # CLAUDE.md — muzzle
 
-Session isolation hooks and persistent memory for Claude Code. Cargo workspace
-with two crates: `muzzle-hooks` (producing 5 binaries for workspace sandboxing,
-git safety, and worktree-based session isolation) and `muzzle-memory` (producing
-1 binary for persistent cross-project memory with FTS5 search).
+Session isolation hooks for Claude Code. A single-crate Cargo workspace,
+`muzzle-hooks`, producing 5 binaries for workspace sandboxing, git safety, and
+worktree-based session isolation.
 
 ## Architecture
-
-The workspace contains two crates:
-
-- `hooks/` — `muzzle-hooks`: session isolation, sandbox enforcement, git safety
-- `memory/` — `muzzle-memory`: persistent memory with SQLite + FTS5
 
 `muzzle-hooks` source layout (`hooks/src/`):
 
@@ -35,16 +29,6 @@ src/
     changelog_bin.rs  # PostToolUse hook (audit log entries)
     session_end.rs    # SessionEnd hook (cleanup worktrees, gzip logs)
     ensure_worktree.rs # On-demand worktree creation binary
-```
-
-`muzzle-memory` source layout (`memory/src/`):
-
-```
-lib.rs              # Library root
-store.rs            # SQLite + FTS5 schema, CRUD, search, topic upsert
-capture.rs          # Parse changelog markdown into session summaries
-inject.rs           # Format memories as markdown for SessionStart injection
-main.rs             # CLI: search, save, capture, context, inject, stats
 ```
 
 ## Commands
@@ -98,14 +82,6 @@ After pushing, poll PR checks and review comments in a single loop for up to 10 
 - **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
 - **Panic -> deny**: All hooks catch panics and deny rather than fail open
 
-## Memory Crate
-
-Persistent cross-project memory with FTS5 full-text search. Storage: `~/.muzzle/memory.db`.
-
-CLI: `memory search|save|capture|context|inject|stats`
-
-Optional scopes for commit convention: add `memory`, `store`, `capture`, `inject` to the scopes list.
-
 ## Commit Convention
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits
@@ -128,7 +104,7 @@ and PR titles.
 | `evolve`   | Autonomous improvement cycle ledger entries     |
 
 Optional scopes: `sandbox`, `gitcheck`, `worktree`, `session`, `permissions`,
-`changelog`, `mcp`, `log`, `bench`, `fuzz`, `memory`, `store`, `capture`, `inject`.
+`changelog`, `mcp`, `log`, `bench`, `fuzz`.
 
 **PR titles** must also follow this format. Squash-merge PRs inherit the PR title
 as the merge commit message.
@@ -150,7 +126,7 @@ docs: rewrite README with product-grade presentation
 chore: bump to v0.2.0 with cargo-release
 ci: add binary size gate to CI workflow
 test(gitcheck): add property-based tests for git safety
-feat(memory): add FTS5 full-text search to memory store
+feat(sandbox): redirect gitignored worktree writes by ignore status
 evolve: cycle 13 -- directive-4-proptest improved
 ```
 
@@ -177,7 +153,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-246 tests (188 hooks unit + 5 claude_md + 17 integration + 10 proptest + 22 memory unit + 4 memory integration) plus 4 fuzz targets.
+229 tests (197 hooks unit + 5 claude_md + 17 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
@@ -230,5 +206,5 @@ Every workflow change must pass `actionlint` + `zizmor --pedantic` in CI.
 
 ## Dependencies
 
-5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. Memory crate adds
-`rusqlite`. No async runtime, no network deps, no proc macros.
+5 crates: `serde`, `serde_json`, `regex`, `flate2`, `libc`. No async runtime,
+no network deps, no proc macros.
