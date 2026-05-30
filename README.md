@@ -249,11 +249,11 @@ bash scripts/bench-coldstart.sh                # Benchmark permissions latency
 
 | Category     | Count | Framework |
 |--------------|------:|-----------|
-| Unit         |   233 | `#[test]` |
+| Unit         |   290 | `#[test]` |
 | Integration  |    22 | `#[test]` |
 | Property     |    10 | proptest  |
 | Fuzz targets |     4 | cargo-fuzz |
-| **Total**    | **265+4** |       |
+| **Total**    | **322+4** |       |
 
 ### Architecture
 

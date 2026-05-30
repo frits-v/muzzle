@@ -82,6 +82,37 @@ After pushing, poll PR checks and review comments in a single loop for up to 10 
 - **Committed repo files**: `CLAUDE.md`, `AGENTS.md` are version-controlled — allowed in worktrees
 - **Panic -> deny**: All hooks catch panics and deny rather than fail open
 
+## Sandbox Configuration
+
+Muzzle uses defense-in-depth for worktree isolation:
+
+1. **CC native sandbox** (Seatbelt/bwrap) — OS-level enforcement for Bash commands
+2. **Muzzle PreToolUse hooks** — application-level enforcement for Edit/Write/MCP tools
+3. **Regex write-path detection** — best-effort fallback when sandbox is not enabled
+
+The OS-level sandbox is the only defense against renamed-binary attacks
+(`cp $(which sed) .bin/zet`). Enable it in `settings.json`:
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyWrite": ["~/src"],
+      "allowWrite": [
+        ".worktrees", ".agents", ".claude", ".claude-tmp",
+        "CLAUDE.md", "AGENTS.md", "GOALS.md", "GOALS.yaml"
+      ]
+    }
+  }
+}
+```
+
+The `allowWrite` paths align with muzzle's `sandbox.rs` allowlist (FR-WE-3
+through FR-WE-5). See [docs/sandbox.md](docs/sandbox.md) for the full
+architecture reference.
+
 ## Commit Convention
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for all commits
@@ -153,7 +184,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-265 tests (233 hooks unit + 5 claude_md + 17 integration + 10 proptest) plus 4 fuzz targets.
+322 tests (290 hooks unit + 5 claude_md + 17 integration + 10 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:

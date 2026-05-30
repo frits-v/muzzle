@@ -22,13 +22,16 @@ pub mod worktree;
 
 /// Format a WORKTREE_MISSING denial message for lazy worktree creation.
 ///
-/// Uses the WHAT/FIX/REF remediation format so the agent can self-repair.
+/// Uses the WHAT/FIX/REF remediation format so the agent can self-repair, and
+/// names common Bash bypass vectors so they aren't rationalized as a workaround.
 pub fn worktree_missing_msg(repo: &str) -> String {
     let bin = config::bin_dir().join("ensure-worktree");
     format!(
         "WORKTREE_MISSING:{repo} — \
          WHAT: No worktree exists for repo '{repo}' in this session. \
          FIX: Run `{} {repo}` to create one, then retry the write. \
+         DO NOT use Bash (sed -i, cp, mv, perl -i, dd, patch, ...) to bypass this — \
+         all writes to the main checkout are forbidden during worktree sessions. \
          REF: docs/architecture.md#key-invariants",
         bin.display()
     )
@@ -56,6 +59,8 @@ mod tests {
             !msg.contains(".claude/hooks/bin"),
             "should not contain hardcoded relative path: {msg}"
         );
+        assert!(msg.contains("DO NOT use Bash"));
+        assert!(msg.contains("sed -i, cp, mv"));
     }
 
     #[test]
@@ -77,6 +82,20 @@ mod tests {
         assert!(
             msg.contains("/opt/muzzle/bin/ensure-worktree acme-api"),
             "should use MUZZLE_BIN_DIR: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_worktree_missing_msg_bypass_prohibition() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let msg = worktree_missing_msg("web-app");
+        assert!(
+            msg.contains("forbidden"),
+            "message must explicitly prohibit bypass"
+        );
+        assert!(
+            msg.contains("DO NOT"),
+            "message must use prescriptive language"
         );
     }
 }
