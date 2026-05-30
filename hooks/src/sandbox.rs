@@ -152,8 +152,11 @@ fn check_path_dispatch(
                             if is_ignored(wt_root, &resolved) {
                                 let repo_prefix = &resolved[..wt_idx];
                                 return PathDecision::Deny(format!(
-                                    "REDIRECT: gitignored path must persist across sessions. Write to: {}{}",
-                                    repo_prefix, after_id
+                                    "REDIRECT: gitignored path must persist across sessions. \
+                                     WHAT: {resolved} is gitignored and would be lost when the \
+                                     session worktree is removed. \
+                                     FIX: Write to: {repo_prefix}{after_id} (main checkout). \
+                                     REF: docs/architecture.md#key-invariants"
                                 ));
                             }
                         }
@@ -371,10 +374,10 @@ fn is_persistent_repo_config(subpath: &str) -> bool {
 /// Whether git ignores `abs_path` within the worktree rooted at `wt_root`.
 ///
 /// Read-only `git check-ignore -q` (preserves H-4: the permissions hook never
-/// writes). Exit 0 = ignored, 1 = tracked/committable. On any error (git
-/// missing, not a repo) default to ignored so the write is redirected to the
-/// main checkout rather than silently lost — never trade data loss for
-/// convenience.
+/// writes). Exit 1 = tracked/committable → not ignored. Everything else maps to
+/// ignored: 0 = ignored, 128 = fatal/not-a-repo, and `None` = signal-killed.
+/// Defaulting non-1 to ignored redirects the write to the main checkout rather
+/// than risk silent loss — never trade data loss for convenience.
 fn git_path_ignored(wt_root: &str, abs_path: &str) -> bool {
     match std::process::Command::new("git")
         .args(["-C", wt_root, "check-ignore", "-q", abs_path])
