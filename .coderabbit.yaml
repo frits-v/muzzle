@@ -83,8 +83,8 @@ reviews:
           beyond serde_derive. Check Cargo.toml changes.
           Denial message format: all Block() and Deny() messages in
           gitcheck.rs, sandbox.rs, and lib.rs must contain WHAT:, FIX:, and
-          REF: tokens. Exception: the REDIRECT message for config paths in
-          sandbox.rs (containing "config path must persist") is exempt.
+          REF: tokens. The REDIRECT message in sandbox.rs leads with a
+          "REDIRECT:" summary and then carries the WHAT:/FIX:/REF: tokens too.
           Module placement: new source files must be placed in the correct
           layer (infra vs core vs binary) per the architecture doc.
           Only flag issues provably violated by the PR diff.
