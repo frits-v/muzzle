@@ -177,7 +177,7 @@ Every file write and Bash command passes through the `permissions` binary. Three
 | Layer               | What it checks                                                    |
 |---------------------|-------------------------------------------------------------------|
 | **Path sandbox**    | System paths (`/etc`, `/usr`, `/System`) always blocked. Dangerous dotfiles prompt. Writes redirected to worktree paths. |
-| **Git safety**      | 8 regex patterns: force push, push to main, delete tags, hard reset, `--no-verify`, `--follow-tags`, delete main/master, rebase onto main. |
+| **Git safety**      | 9 regex patterns: force push, push to main, delete tags, hard reset, `--no-verify`, `--follow-tags`, delete main/master, rebase onto main, `gh api` server-side commits. |
 | **Worktree guard**  | Writes to main checkout blocked when worktrees are active. `WORKTREE_MISSING` for repos without a worktree yet. |
 
 Every layer returns `ALLOW`, `DENY`, or `ASK` (prompt the user). Panics always deny — hooks never fail open.
@@ -249,11 +249,11 @@ bash scripts/bench-coldstart.sh                # Benchmark permissions latency
 
 | Category     | Count | Framework |
 |--------------|------:|-----------|
-| Unit         |   130 | `#[test]` |
-| Integration  |    18 | `#[test]` |
+| Unit         |   200 | `#[test]` |
+| Integration  |    22 | `#[test]` |
 | Property     |    10 | proptest  |
 | Fuzz targets |     4 | cargo-fuzz |
-| **Total**    | **158+4** |       |
+| **Total**    | **232+4** |       |
 
 ### Architecture
 
@@ -263,7 +263,7 @@ src/
   config.rs           # Workspace resolution, path constants
   session.rs          # Session ID via PPID walk, spec file I/O (flock)
   sandbox.rs          # Path sandboxing (7 rules + dot-dot normalization)
-  gitcheck.rs         # 8 git safety regex patterns + repo extraction
+  gitcheck.rs         # 9 git safety regex patterns + repo extraction
   output.rs           # JSON response formatting for PreToolUse
   changelog.rs        # Audit log formatting + read-only detection
   log.rs              # Structured JSON logging to stderr
