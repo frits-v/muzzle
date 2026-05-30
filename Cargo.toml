@@ -1,5 +1,5 @@
 [workspace]
-members = ["hooks", "memory"]
+members = ["hooks"]
 resolver = "2"
 
 [workspace.dependencies]

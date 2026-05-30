@@ -1,20 +1,15 @@
 # Architecture
 
-Muzzle is a Cargo workspace producing 6 binaries across two crates. It
-provides session isolation, workspace sandboxing, and persistent memory
-for AI coding agents (currently targeting Claude Code hooks).
+Muzzle is a single-crate Cargo workspace, `muzzle-hooks`, producing 5
+binaries. It provides session isolation and workspace sandboxing for AI
+coding agents (currently targeting Claude Code hooks).
 
 ## Crate Map
 
 ```text
 muzzle (workspace)
-├── hooks/    muzzle-hooks   5 binaries   Session isolation + sandbox enforcement
-└── memory/   muzzle-memory  1 binary     Persistent cross-project memory (SQLite + FTS5)
+└── hooks/    muzzle-hooks   5 binaries   Session isolation + sandbox enforcement
 ```
-
-The crates are **independent** — `muzzle-memory` does not depend on
-`muzzle-hooks` and vice versa. They share only workspace-level dependency
-versions (`serde`, `serde_json`).
 
 ## Layer Diagram
 
@@ -71,29 +66,18 @@ binaries ──→ core modules ──→ infrastructure
 | `bin/session_end` | Binary | SessionEnd hook — cleanup worktrees, gzip logs |
 | `bin/ensure_worktree` | Binary | On-demand worktree creation |
 
-`muzzle-memory` is a flat single-layer crate:
-
-| Module | Purpose |
-|---|---|
-| `store` | SQLite + FTS5 schema, CRUD, search, topic upsert |
-| `capture` | Parse changelog Markdown into session summaries |
-| `inject` | Format memories as Markdown for SessionStart injection |
-| `main` | CLI: search, save, capture, context, inject, stats |
-
 ## Forbidden Dependencies
 
 These dependency directions are explicitly prohibited:
 
-1. **`muzzle-memory` must not depend on `muzzle-hooks`** — the crates are
-   independent and must remain so.
-2. **Infrastructure must not import core modules** — `config`, `output`,
+1. **Infrastructure must not import core modules** — `config`, `output`,
    `changelog`, `log`, `mcp` must not import `sandbox`, `gitcheck`,
    `session`, or `worktree`.
-3. **No async runtime** — the workspace is synchronous-only. No `tokio`,
+2. **No async runtime** — the workspace is synchronous-only. No `tokio`,
    `async-std`, or equivalent.
-4. **No network dependencies** — no HTTP clients, no API SDKs. All network
+3. **No network dependencies** — no HTTP clients, no API SDKs. All network
    interaction happens through Claude Code's tool system.
-5. **No proc macros** — `serde_derive` (pulled in by `serde`'s `derive`
+4. **No proc macros** — `serde_derive` (pulled in by `serde`'s `derive`
    feature) is the only permitted proc macro. No others may be added.
 
 ## Cross-Cutting Concerns
@@ -105,7 +89,6 @@ These dependency directions are explicitly prohibited:
 | Configuration | `hooks/src/config.rs` | Constants + path resolution (workspaces, XDG dirs) |
 | Audit trail | `hooks/src/changelog.rs` | Markdown audit log per session |
 | State storage | `~/.local/state/muzzle/` (default) | XDG state directory for sessions, specs (`XDG_STATE_HOME`) |
-| Memory storage | `~/.muzzle/memory.db` (default) | SQLite + FTS5 database |
 
 ## Key Invariants
 
@@ -119,15 +102,14 @@ These dependency directions are explicitly prohibited:
 
 ## External Dependencies
 
-6 runtime crates (hooks: 5, memory adds 1):
+5 runtime crates:
 
-| Crate | Used By | Purpose |
-|---|---|---|
-| `serde` | Both | Serialization (derive) |
-| `serde_json` | Both | JSON parsing and formatting |
-| `regex` | Hooks | Git safety pattern matching |
-| `flate2` | Hooks | Gzip compression for session logs |
-| `libc` | Hooks | PPID resolution for session identification |
-| `rusqlite` | Memory | SQLite + FTS5 (bundled) |
+| Crate | Purpose |
+|---|---|
+| `serde` | Serialization (derive) |
+| `serde_json` | JSON parsing and formatting |
+| `regex` | Git safety pattern matching |
+| `flate2` | Gzip compression for session logs |
+| `libc` | PPID resolution for session identification |
 
 Dev-only: `proptest` (property-based testing).

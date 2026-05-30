@@ -103,7 +103,7 @@ Tests cover both existing and missing workspace paths.
 
 ### 10. Maintain test coverage above 100 tests
 
-Current: 220 tests (166 hooks unit + 5 doc + 13 hooks integration + 10 proptest + 22 memory unit + 4 memory integration). Do not regress.
+Current: 229 tests (197 hooks unit + 5 doc + 17 hooks integration + 10 proptest). Do not regress.
 
 **Steer:** increase
 
@@ -203,20 +203,16 @@ Not actionable (time/structural):
 
 **Steer:** increase
 
-### 20. muzzle-memory v0.1 quality and coverage
+### 20. Sunset muzzle-memory crate
 
-SQLite + FTS5 memory crate shipped in PR #19. Track deferred review findings
-and ensure the memory crate meets the same quality bar as hooks.
+The SQLite + FTS5 memory crate is removed. Memory and context needs are served
+by ecosystem tooling (`ao inject`, cass) and Claude Code's own memory files, so
+maintaining a contested sixth binary and the sole `rusqlite` dependency is not
+worth it. muzzle is now a single-crate (`muzzle-hooks`, 5 binaries) workspace.
 
-Deferred items:
-- [ ] `stats()` counts empty sessions without observations (#20)
-- [ ] Add ONNX vector embeddings behind `semantic` feature flag (v0.2)
-- [ ] Wire SessionStart inject + SessionEnd capture hooks into settings.json
-- [ ] Import existing MEMORY.md entries as observations before switching to auto-gen
+Closed as won't-fix: #20, #21, #26, #27, #28, #45 and the rusqlite bump #46.
 
-Current: 26 memory tests (22 unit + 4 integration). Binary: 1.4MB.
-
-**Steer:** increase
+**Steer:** complete
 
 ### 21. Standalone architecture document
 
@@ -254,7 +250,7 @@ Implement path-based risk classification for changes:
 | Risk | Paths | Gate Config |
 |------|-------|-------------|
 | Low | docs/, tests/, scripts/, CHANGELOG.md | Standard gates |
-| Medium | hooks/src/, memory/src/ (non-critical) | Standard + proptest |
+| Medium | hooks/src/ (non-critical) | Standard + proptest |
 | High | sandbox.rs, gitcheck.rs, session.rs, worktree/ | All gates + second-agent review |
 
 Classification can be a script mapping touched files to risk levels. High-risk
@@ -342,7 +338,7 @@ Reference: harness.md Pillar 1b — agent context file pruning policy.
 | cargo-clippy    | `cargo clippy --all-targets -- -D warnings`      | 5      | No clippy warnings                |
 | cargo-fmt       | `cargo fmt -- --check`                           | 3      | Code formatted per rustfmt.toml   |
 | integration     | `cargo build && cargo test --test integration`   | 5      | Integration tests pass            |
-| six-binaries    | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree && test -f target/release/memory` | 5 | All 6 binaries produced |
+| five-binaries   | `cargo build --release && test -f target/release/session-start && test -f target/release/permissions && test -f target/release/changelog && test -f target/release/session-end && test -f target/release/ensure-worktree` | 5 | All 5 binaries produced |
 | rustdoc         | `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps`         | 3      | No rustdoc warnings             |
 | binary-size     | `cargo build --release && test $(stat -f%z target/release/permissions) -lt 5242880` | 2 | Each binary stays under 5 MB |
 | claude-md-valid | `cargo test --test claude_md`                            | 3      | CLAUDE.md matches codebase      |
