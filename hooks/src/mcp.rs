@@ -68,6 +68,16 @@ fn route_github(action: &str) -> McpDecision {
         return McpDecision::Allow;
     }
 
+    // Deny: server-side commits bypass local git signing
+    match action {
+        "create_or_update_file" | "push_files" | "delete_file" => {
+            return McpDecision::Deny(
+                "Use local git — GitHub API commits bypass commit signing".into(),
+            )
+        }
+        _ => {}
+    }
+
     // Safe writes
     match action {
         "create_pull_request"
@@ -76,8 +86,6 @@ fn route_github(action: &str) -> McpDecision {
         | "create_issue"
         | "add_issue_comment"
         | "update_issue"
-        | "create_or_update_file"
-        | "push_files"
         | "fork_repository"
         | "create_repository" => return McpDecision::Allow,
         _ => {}
@@ -291,11 +299,28 @@ mod tests {
             "mcp__github__create_branch",
             "mcp__github__create_issue",
             "mcp__github__add_issue_comment",
-            "mcp__github__push_files",
         ];
         for tool in &tools {
             let d = route(tool);
             assert_eq!(d, McpDecision::Allow, "expected ALLOW for {}", tool);
+        }
+    }
+
+    #[test]
+    fn test_github_server_side_commit_deny() {
+        let tools = [
+            "mcp__github__push_files",
+            "mcp__github__create_or_update_file",
+            "mcp__github__delete_file",
+        ];
+        for tool in &tools {
+            let d = route(tool);
+            assert!(
+                matches!(d, McpDecision::Deny(ref msg) if msg.contains("commit signing")),
+                "expected DENY for {}, got {:?}",
+                tool,
+                d
+            );
         }
     }
 
