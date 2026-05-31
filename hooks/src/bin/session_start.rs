@@ -140,6 +140,10 @@ fn handle_startup(sess: &mut State, timestamp: &str) {
     // Update convenience symlink
     update_symlink(&sess.id);
 
+    // Check sandbox before worktree creation — this must run even if worktree
+    // creation fails (the early return below would skip it otherwise).
+    check_sandbox_enabled();
+
     // Create worktrees
     let result = worktree::create(sess);
     if result.failed {
@@ -630,6 +634,99 @@ fn clean_orphaned_wt_branches(repo_path: &Path) {
             let _ = worktree::run_git_output(&["-C", &repo_str, "branch", "-D", branch]);
         }
     }
+}
+
+/// Check if Claude Code's native Bash sandbox is enabled.
+///
+/// The sandbox provides OS-level (Seatbelt/bwrap) enforcement that prevents ALL
+/// Bash bypass vectors (renamed binaries, interpreter writes, etc.). Without it,
+/// muzzle relies on regex-based write-path detection which can be circumvented.
+///
+/// Reads settings files in Claude Code's precedence order and checks for
+/// `sandbox.enabled: true`. If not found, emits a context message instructing
+/// the agent to ask the human operator to enable it.
+fn check_sandbox_enabled() {
+    let home = config::home();
+
+    // Settings files in Claude Code precedence order (any scope can enable it).
+    // Collect values from ALL files before deciding — settings merge across scopes.
+    let settings_paths = [
+        home.join(".claude/settings.json"),
+        home.join(".claude/settings.local.json"),
+        PathBuf::from(".claude/settings.json"),
+        PathBuf::from(".claude/settings.local.json"),
+    ];
+
+    let mut sandbox_enabled = false;
+    let mut allow_unsandboxed: Option<bool> = None;
+
+    // Claude Code merges settings in precedence order: user → user-local → project →
+    // project-local. Later files override earlier ones (last-write-wins), but only
+    // when the key is explicitly present. A file that omits a key does not reset it
+    // to the default — it inherits from the previous scope.
+    for path in &settings_paths {
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(v) = json
+                    .get("sandbox")
+                    .and_then(|s| s.get("enabled"))
+                    .and_then(|e| e.as_bool())
+                {
+                    sandbox_enabled = v;
+                }
+                if let Some(v) = json
+                    .get("sandbox")
+                    .and_then(|s| s.get("allowUnsandboxedCommands"))
+                    .and_then(|v| v.as_bool())
+                {
+                    allow_unsandboxed = Some(v);
+                }
+            }
+        }
+    }
+
+    // Default to true per CC docs if no file explicitly set it
+    let allow_unsandboxed = allow_unsandboxed.unwrap_or(true);
+
+    if sandbox_enabled {
+        if allow_unsandboxed {
+            emit_context(
+                "\nWARNING: Sandbox is enabled but `allowUnsandboxedCommands` is true (default). \
+                 The `dangerouslyDisableSandbox` escape hatch can bypass OS-level enforcement. \
+                 Ask the human operator to set `\"allowUnsandboxedCommands\": false` in sandbox settings.",
+            );
+        }
+        return;
+    }
+
+    // No settings file has sandbox.enabled: true
+    emit_context(
+        "\nSANDBOX NOT ENABLED: Claude Code's native Bash sandbox is not active. \
+         Without it, file-writing Bash commands (sed -i, cp, mv, python, etc.) can bypass \
+         worktree isolation via renamed binaries or interpreters.\n\
+         Ask the human operator to enable the sandbox by adding this to settings.json:\n\
+         {\n  \
+           \"sandbox\": {\n    \
+             \"enabled\": true,\n    \
+             \"allowUnsandboxedCommands\": false,\n    \
+             \"filesystem\": {\n      \
+               \"denyWrite\": [\"~/src\"],\n      \
+               \"allowWrite\": [\n        \
+                 \".worktrees\",\n        \
+                 \".agents\",\n        \
+                 \".claude\",\n        \
+                 \".claude-tmp\",\n        \
+                 \"CLAUDE.md\",\n        \
+                 \"AGENTS.md\",\n        \
+                 \"GOALS.md\",\n        \
+                 \"GOALS.yaml\"\n      \
+               ]\n    \
+             }\n  \
+           }\n\
+         }\n\
+         See docs/sandbox.md for full architecture details.\n\
+         Until enabled, muzzle provides regex-based write-path detection as a best-effort defense.",
+    );
 }
 
 /// UTC timestamp without chrono dependency.
