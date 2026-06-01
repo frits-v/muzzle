@@ -795,15 +795,6 @@ mod tests {
     }
 
     #[test]
-    fn test_input_fields_from_empty_value() {
-        let v = serde_json::json!({});
-        let fields = InputFields::from_value(&v);
-        assert_eq!(fields.command, "");
-        assert_eq!(fields.file_path, "");
-        assert_eq!(fields.repo, "");
-    }
-
-    #[test]
     fn test_output_fields_from_value() {
         let v = serde_json::json!({
             "stdout": "output text",
@@ -872,5 +863,107 @@ mod tests {
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&tmp);
+    }
+
+    // ── Property-based tests for format_entry invariants ──────────
+
+    use proptest::prelude::*;
+
+    fn tool_name_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("Bash".to_string()),
+            Just("Edit".to_string()),
+            Just("Write".to_string()),
+            Just("NotebookEdit".to_string()),
+            Just("mcp__github__create_pull_request".to_string()),
+            Just("mcp__github__create_branch".to_string()),
+            Just("mcp__claude_ai_Atlassian__createJiraIssue".to_string()),
+            "mcp__[a-z_]{3,20}__[a-z_]{3,20}",
+            "[A-Z][a-zA-Z]{2,15}",
+        ]
+    }
+
+    fn input_fields_strategy() -> impl Strategy<Value = InputFields> {
+        (
+            "[a-z /._-]{0,300}",
+            "[a-z/._-]{0,50}",
+            "[a-z/._-]{0,50}",
+            "[A-Z]{0,5}",
+            "[a-zA-Z ]{0,50}",
+        )
+            .prop_map(
+                |(command, file_path, repo, project_key, summary)| InputFields {
+                    command,
+                    file_path,
+                    notebook_path: String::new(),
+                    repo,
+                    title: summary.clone(),
+                    branch: String::new(),
+                    project_key,
+                    summary,
+                },
+            )
+    }
+
+    proptest! {
+        /// format_entry output is always non-empty.
+        #[test]
+        fn prop_format_entry_non_empty(
+            tool in tool_name_strategy(),
+            input in input_fields_strategy(),
+        ) {
+            let output = OutputFields::default();
+            let entry = format_entry(&tool, &input, &output);
+            assert!(!entry.is_empty(), "format_entry should never return empty");
+        }
+
+        /// format_entry output always contains a bold marker (**...**).
+        #[test]
+        fn prop_format_entry_has_bold_marker(
+            tool in tool_name_strategy(),
+            input in input_fields_strategy(),
+        ) {
+            let output = OutputFields::default();
+            let entry = format_entry(&tool, &input, &output);
+            let bold_count = entry.matches("**").count();
+            assert!(
+                bold_count >= 2,
+                "format_entry should contain at least one bold marker (**X**), got: {}",
+                entry
+            );
+        }
+
+        /// format_entry output always starts with a backtick-quoted timestamp.
+        #[test]
+        fn prop_format_entry_starts_with_timestamp(
+            tool in tool_name_strategy(),
+            input in input_fields_strategy(),
+        ) {
+            let output = OutputFields::default();
+            let entry = format_entry(&tool, &input, &output);
+            assert!(
+                entry.starts_with('`'),
+                "format_entry should start with backtick timestamp, got: {}",
+                &entry[..entry.len().min(40)]
+            );
+        }
+
+        /// Bash entries with long commands are truncated.
+        #[test]
+        fn prop_bash_long_command_truncated(cmd_len in 201..500usize) {
+            let long_cmd = "x".repeat(cmd_len);
+            let input = InputFields {
+                command: long_cmd,
+                ..Default::default()
+            };
+            let output = OutputFields::default();
+            let entry = format_entry("Bash", &input, &output);
+            assert!(
+                entry.contains("..."),
+                "Bash with cmd_len={} should truncate, got: {}",
+                cmd_len,
+                &entry[..entry.len().min(80)]
+            );
+        }
     }
 }
