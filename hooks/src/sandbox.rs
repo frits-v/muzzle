@@ -1038,6 +1038,38 @@ mod tests {
             "tracked main-checkout path must still be denied, got {:?}",
             tracked
         );
+
+        // Fail closed: when git can't decide (Unknown — not a repo, git missing,
+        // signal-kill), Guard B must NOT exempt the path. Allowing it would
+        // disable worktree isolation for arbitrary main-checkout writes whenever
+        // `git check-ignore` errors. This is the property the tri-state exists
+        // for; a bare `!= Tracked` check would wrongly allow it.
+        let always_unknown = |_repo_root: &str, _path: &str| IgnoreStatus::Unknown;
+        let unknown_main = check_path_dispatch(
+            &gitignored_main,
+            Some(&sess),
+            ToolContext::FileTool,
+            &always_unknown,
+        );
+        assert!(
+            matches!(unknown_main, PathDecision::Deny(_)),
+            "unknown-verdict main-checkout path must fail closed (deny), got {:?}",
+            unknown_main
+        );
+
+        // The mirror property: Guard A redirects an unknown-verdict worktree
+        // path to the main checkout rather than risk silent loss at teardown.
+        let unknown_wt = check_path_dispatch(
+            &gitignored_wt,
+            Some(&sess),
+            ToolContext::FileTool,
+            &always_unknown,
+        );
+        assert!(
+            matches!(&unknown_wt, PathDecision::Deny(m) if m.contains("REDIRECT")),
+            "unknown-verdict worktree path must redirect to main, got {:?}",
+            unknown_wt
+        );
     }
 
     #[test]
