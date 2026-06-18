@@ -38,18 +38,18 @@ pub fn check_path_with_context(
     sess: Option<&State>,
     ctx: ToolContext,
 ) -> PathDecision {
-    check_path_dispatch(raw_path, sess, ctx, &git_path_ignored)
+    check_path_dispatch(raw_path, sess, ctx, &git_ignore_status)
 }
 
-/// Core path evaluation. `is_ignored(worktree_root, abs_path)` decides whether a
-/// write inside a worktree is gitignored (redirect to the main checkout so it
-/// survives teardown) or tracked branch content (allow in place). Injected so
-/// unit tests exercise the redirect logic without a real git repo.
+/// Core path evaluation. `ignore_status(repo_root, abs_path)` reports git's
+/// verdict on a path: gitignored (redirect to / persist in the main checkout),
+/// tracked branch content (keep in the worktree), or unknown. Injected so unit
+/// tests exercise the redirect logic without a real git repo.
 fn check_path_dispatch(
     raw_path: &str,
     sess: Option<&State>,
     ctx: ToolContext,
-    is_ignored: &dyn Fn(&str, &str) -> bool,
+    ignore_status: &dyn Fn(&str, &str) -> IgnoreStatus,
 ) -> PathDecision {
     let home = config::home();
     let workspaces = config::workspaces();
@@ -147,9 +147,12 @@ fn check_path_dispatch(
                         let id_start = wt_idx + WORKTREES_SEG.len();
                         // Find the slash after the worktree ID.
                         if let Some(id_slash) = resolved[id_start..].find('/') {
+                            // Redirect anything not confirmed tracked (ignored or
+                            // unknown) to the main checkout — never risk silent
+                            // loss of a gitignored file at teardown.
                             let wt_root = &resolved[..id_start + id_slash]; // "<repo>/.worktrees/<id>"
                             let after_id = &resolved[id_start + id_slash..]; // "/..." after ID
-                            if is_ignored(wt_root, &resolved) {
+                            if ignore_status(wt_root, &resolved) != IgnoreStatus::Tracked {
                                 let repo_prefix = &resolved[..wt_idx];
                                 return PathDecision::Deny(format!(
                                     "REDIRECT: gitignored path must persist across sessions. \
@@ -182,6 +185,19 @@ fn check_path_dispatch(
                 // FR-WE-1: Block writes to main checkout — redirect or WORKTREE_MISSING
                 if matching_ws.is_some() && !ws_str.is_empty() {
                     let repo = extract_repo(&resolved, ws_str);
+                    // Gitignored files persist in the main checkout — the
+                    // worktree redirect above sends their worktree copies here.
+                    // Allow the write to land instead of bouncing it back into
+                    // the worktree, which would loop against that redirect
+                    // forever (#69). Only a confirmed-ignored verdict exempts
+                    // the path: on an unknown verdict, keep worktree isolation
+                    // rather than fail open and allow arbitrary main writes.
+                    if !repo.is_empty()
+                        && ignore_status(&format!("{ws_str}/{repo}"), &resolved)
+                            == IgnoreStatus::Ignored
+                    {
+                        return PathDecision::Allow;
+                    }
                     let wt_dir = format!("{}/{}/.worktrees/{}", ws_str, repo, sess.short_id);
                     if !repo.is_empty() && !Path::new(&wt_dir).exists() {
                         return PathDecision::Deny(crate::worktree_missing_msg(&repo));
@@ -371,20 +387,36 @@ fn is_persistent_repo_config(subpath: &str) -> bool {
         || subpath == "/AGENTS.md"
 }
 
-/// Whether git ignores `abs_path` within the worktree rooted at `wt_root`.
+/// Git's verdict on whether a path is committable in its repo.
+///
+/// `Unknown` exists so the two write-guards can split on it safely: the
+/// worktree-persistence redirect treats `Unknown` as ignored (redirect to the
+/// main checkout rather than risk silent loss), while the main-checkout
+/// exemption treats it as not-ignored (keep isolation rather than fail open).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum IgnoreStatus {
+    Ignored,
+    Tracked,
+    Unknown,
+}
+
+/// Git's ignore verdict for `abs_path` within the repo rooted at `repo_root`.
 ///
 /// Read-only `git check-ignore -q` (preserves H-4: the permissions hook never
-/// writes). Exit 1 = tracked/committable → not ignored. Everything else maps to
-/// ignored: 0 = ignored, 128 = fatal/not-a-repo, and `None` = signal-killed.
-/// Defaulting non-1 to ignored redirects the write to the main checkout rather
-/// than risk silent loss — never trade data loss for convenience.
-fn git_path_ignored(wt_root: &str, abs_path: &str) -> bool {
+/// writes). Exit 0 = ignored, exit 1 = tracked. Anything else (128 fatal /
+/// not-a-repo, signal-kill, git missing) is `Unknown` — the callers decide how
+/// to treat it, each in its own safe direction.
+fn git_ignore_status(repo_root: &str, abs_path: &str) -> IgnoreStatus {
     match std::process::Command::new("git")
-        .args(["-C", wt_root, "check-ignore", "-q", abs_path])
+        .args(["-C", repo_root, "check-ignore", "-q", abs_path])
         .output()
     {
-        Ok(out) => out.status.code() != Some(1),
-        Err(_) => true,
+        Ok(out) => match out.status.code() {
+            Some(0) => IgnoreStatus::Ignored,
+            Some(1) => IgnoreStatus::Tracked,
+            _ => IgnoreStatus::Unknown,
+        },
+        Err(_) => IgnoreStatus::Unknown,
     }
 }
 
@@ -483,11 +515,16 @@ mod tests {
     /// Models a typical repo's ignore rules for worktree-redirect tests without
     /// touching a real git repo: `.agents/` and `.claude/` are gitignored,
     /// everything else (CLAUDE.md, AGENTS.md, source) is tracked.
-    fn fake_ignored(_wt_root: &str, path: &str) -> bool {
-        path.contains("/.agents/")
+    fn fake_ignored(_repo_root: &str, path: &str) -> IgnoreStatus {
+        if path.contains("/.agents/")
             || path.ends_with("/.agents")
             || path.contains("/.claude/")
             || path.ends_with("/.claude")
+        {
+            IgnoreStatus::Ignored
+        } else {
+            IgnoreStatus::Tracked
+        }
     }
 
     /// `check_path` with the fake ignore predicate injected.
@@ -936,7 +973,107 @@ mod tests {
     }
 
     #[test]
-    fn test_git_path_ignored_real_repo() {
+    fn test_gitignored_main_checkout_write_allowed() {
+        // Regression for #69: two write-guards redirected gitignored paths in
+        // opposite directions, looping forever. Guard A redirects a worktree
+        // copy of a gitignored path to the main checkout; Guard B must let that
+        // copy land there instead of bouncing it back into the worktree. Only
+        // non-config gitignored paths (e.g. local env/state files) hit the loop;
+        // .agents/.claude/CLAUDE.md/AGENTS.md are already config-exempt.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        // Models a repo gitignoring *.local; infra/main.tf stays tracked.
+        let ignore_local = |_repo_root: &str, path: &str| {
+            if path.ends_with(".local") {
+                IgnoreStatus::Ignored
+            } else {
+                IgnoreStatus::Tracked
+            }
+        };
+
+        let gitignored_wt = format!("{}/acme-infra/.worktrees/abc12345/infra/dev.local", ws_str);
+        let gitignored_main = format!("{}/acme-infra/infra/dev.local", ws_str);
+        let tracked_main = format!("{}/acme-infra/infra/main.tf", ws_str);
+
+        // Guard A: the worktree copy of the gitignored file redirects to main.
+        let wt = check_path_dispatch(
+            &gitignored_wt,
+            Some(&sess),
+            ToolContext::FileTool,
+            &ignore_local,
+        );
+        assert!(
+            matches!(&wt, PathDecision::Deny(m) if m.contains("REDIRECT")),
+            "Guard A should REDIRECT gitignored worktree path to main, got {:?}",
+            wt
+        );
+
+        // Guard B exemption (the fix): the redirect target in the main checkout
+        // is allowed even though the worktree dir does not exist — gitignored
+        // files persist in the main checkout regardless of worktree state.
+        let main = check_path_dispatch(
+            &gitignored_main,
+            Some(&sess),
+            ToolContext::FileTool,
+            &ignore_local,
+        );
+        assert!(
+            matches!(main, PathDecision::Allow),
+            "Guard B should ALLOW gitignored main-checkout path (#69), got {:?}",
+            main
+        );
+
+        // Isolation intact: a tracked main-checkout path is still denied.
+        let tracked = check_path_dispatch(
+            &tracked_main,
+            Some(&sess),
+            ToolContext::FileTool,
+            &ignore_local,
+        );
+        assert!(
+            matches!(tracked, PathDecision::Deny(_)),
+            "tracked main-checkout path must still be denied, got {:?}",
+            tracked
+        );
+
+        // Fail closed: when git can't decide (Unknown — not a repo, git missing,
+        // signal-kill), Guard B must NOT exempt the path. Allowing it would
+        // disable worktree isolation for arbitrary main-checkout writes whenever
+        // `git check-ignore` errors. This is the property the tri-state exists
+        // for; a bare `!= Tracked` check would wrongly allow it.
+        let always_unknown = |_repo_root: &str, _path: &str| IgnoreStatus::Unknown;
+        let unknown_main = check_path_dispatch(
+            &gitignored_main,
+            Some(&sess),
+            ToolContext::FileTool,
+            &always_unknown,
+        );
+        assert!(
+            matches!(unknown_main, PathDecision::Deny(_)),
+            "unknown-verdict main-checkout path must fail closed (deny), got {:?}",
+            unknown_main
+        );
+
+        // The mirror property: Guard A redirects an unknown-verdict worktree
+        // path to the main checkout rather than risk silent loss at teardown.
+        let unknown_wt = check_path_dispatch(
+            &gitignored_wt,
+            Some(&sess),
+            ToolContext::FileTool,
+            &always_unknown,
+        );
+        assert!(
+            matches!(&unknown_wt, PathDecision::Deny(m) if m.contains("REDIRECT")),
+            "unknown-verdict worktree path must redirect to main, got {:?}",
+            unknown_wt
+        );
+    }
+
+    #[test]
+    fn test_git_ignore_status_real_repo() {
         // Validates the real `git check-ignore` wiring behind the worktree
         // redirect (#60): a gitignored path reports ignored, a tracked one does
         // not. Uses a throwaway git repo so we exercise actual git, not the fake.
@@ -957,12 +1094,14 @@ mod tests {
         std::fs::write(dir.join("CLAUDE.md"), "x").unwrap();
 
         let root = dir.to_string_lossy().to_string();
-        assert!(
-            git_path_ignored(&root, &dir.join(".agents/note.md").to_string_lossy()),
+        assert_eq!(
+            git_ignore_status(&root, &dir.join(".agents/note.md").to_string_lossy()),
+            IgnoreStatus::Ignored,
             "gitignored .agents/ path must report ignored"
         );
-        assert!(
-            !git_path_ignored(&root, &dir.join("CLAUDE.md").to_string_lossy()),
+        assert_eq!(
+            git_ignore_status(&root, &dir.join("CLAUDE.md").to_string_lossy()),
+            IgnoreStatus::Tracked,
             "tracked CLAUDE.md must not report ignored"
         );
         let _ = std::fs::remove_dir_all(&dir);
