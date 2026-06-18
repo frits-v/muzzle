@@ -1,6 +1,8 @@
 # Build artifacts
 /target/
 /bin/*.dSYM/
+/mutants.out/
+/mutants.out.old/
 
 # OS files
 .DS_Store
