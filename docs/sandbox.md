@@ -81,7 +81,7 @@ sandbox config must match these:
 |---------------------------|---------------------------|---------------------------|
 | Source code (main)        | Blocked by `denyWrite`    | Blocked by WORKTREE_MISSING |
 | `.worktrees/`             | `.worktrees`              | FR-WE-3: worktree paths  |
-| `.claude/worktrees/` (CC agent worktrees) | `.claude` | FR-WE-3: worktree paths  |
+| `.claude/worktrees/<id>/` at the repo root (CC agent worktrees) | `.claude` | FR-WE-3: worktree paths  |
 | `.agents/`                | `.agents`                 | FR-WE-4: config paths    |
 | `.claude/`                | `.claude`                 | FR-WE-4: config paths    |
 | `.claude-tmp/`            | `.claude-tmp`             | FR-WE-5: state directory  |

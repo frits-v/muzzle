@@ -785,18 +785,25 @@ fn extract_copy_dest(cmd: &str, tool_match_end: usize) -> Option<String> {
 
 /// Check if a path is a main checkout (not a session worktree, CC-native
 /// agent worktree, or session temp).
+///
+/// Exempt layouts are anchored to the repo root so a fabricated nested
+/// directory (e.g. `<repo>/src/.claude/worktrees/`) still counts as the
+/// main checkout.
 fn is_main_checkout_path(path: &str, workspace: &str) -> bool {
     let prefix = format!("{}/", workspace);
-    if !path.starts_with(&prefix) {
+    let Some(rest) = path.strip_prefix(&prefix) else {
         return false;
-    }
-    if path.contains("/.claude-tmp/")
-        || path.contains("/.worktrees/")
-        || path.contains("/.claude/worktrees/")
-    {
-        return false;
-    }
-    true
+    };
+    let after_repo = match rest.find('/') {
+        Some(idx) => &rest[idx..],
+        None => return true, // "<ws>/<repo>" — the repo root itself
+    };
+    !(after_repo.starts_with("/.claude-tmp/")
+        || after_repo == "/.claude-tmp"
+        || after_repo.starts_with("/.worktrees/")
+        || after_repo == "/.worktrees"
+        || after_repo.starts_with("/.claude/worktrees/")
+        || after_repo == "/.claude/worktrees")
 }
 
 /// Extract the repo directory name from a workspace path.
@@ -1291,6 +1298,28 @@ mod tests {
             reason.is_some(),
             "repo .claude/ dir itself must still count as main checkout"
         );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_nested_fake_worktree_denied() {
+        // Worktree exemptions are anchored to the repo root: a fabricated
+        // nested dir must not masquerade as a worktree.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmds = [
+            format!("git -C {fixed_ws}/web-app/src/.claude/worktrees/agent-x commit -m msg"),
+            format!("git -C {fixed_ws}/web-app/src/.worktrees/abc12345 commit -m msg"),
+        ];
+        for cmd in &cmds {
+            let reason = check_worktree_enforcement(cmd, true, "abc12345");
+            assert!(
+                reason.is_some(),
+                "nested fake worktree path must be denied: {:?}",
+                cmd
+            );
+        }
+        std::env::remove_var("MUZZLE_WORKSPACE");
     }
 
     #[test]

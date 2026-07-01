@@ -138,13 +138,8 @@ fn check_path_dispatch(
                 }
 
                 // FR-WE-3: Allow writes to worktree paths — muzzle session
-                // worktrees and CC-native agent worktrees. Agent segment first
-                // so a nested agent worktree resolves against its own root.
-                const WORKTREE_SEGS: &[&str] = &["/.claude/worktrees/", "/.worktrees/"];
-                if let Some((seg, wt_idx)) = WORKTREE_SEGS
-                    .iter()
-                    .find_map(|seg| resolved.find(seg).map(|idx| (seg, idx)))
-                {
+                // worktrees and CC-native agent worktrees.
+                if let Some((wt_idx, seg_len)) = find_worktree_segment(&resolved, ws_str) {
                     // Gitignored writes are redirected to the main checkout so they
                     // survive worktree teardown (research notes, .agents/, tfstate,
                     // env files, etc.). Tracked files (CLAUDE.md, source, ...) stay
@@ -152,7 +147,7 @@ fn check_path_dispatch(
                     // Closes #49 (tracked CLAUDE.md no longer redirected) and #60
                     // (gitignored writes no longer silently lost).
                     // E.g. <repo>/.worktrees/<id>/.agents/foo.md → <repo>/.agents/foo.md
-                    let id_start = wt_idx + seg.len();
+                    let id_start = wt_idx + seg_len;
                     // Find the slash after the worktree ID.
                     if let Some(id_slash) = resolved[id_start..].find('/') {
                         // Redirect anything not confirmed tracked (ignored or
@@ -216,7 +211,7 @@ fn check_path_dispatch(
                 // AR-5: No legacy direct-edit mode
                 if matching_ws.is_some() && !ws_str.is_empty() {
                     // Allow writes to existing worktree paths from other sessions
-                    if resolved.contains("/.worktrees/") {
+                    if find_worktree_segment(&resolved, ws_str).is_some() {
                         return PathDecision::Allow;
                     }
                     // Allow config paths even when worktrees failed
@@ -275,6 +270,56 @@ fn check_path_dispatch(
 
     // FR-PS-7: Outside HOME — ASK
     PathDecision::Ask(format!("Write to {} — outside normal workspace", raw_path))
+}
+
+/// Worktree path segments muzzle recognizes: Claude Code native agent
+/// worktrees and muzzle session worktrees. Agent segment listed first, but
+/// [`find_worktree_segment`] picks the innermost anchored match regardless.
+const WORKTREE_SEGS: &[&str] = &["/.claude/worktrees/", "/.worktrees/"];
+
+/// Find the innermost worktree segment in `resolved` that sits at a real
+/// worktree base. Returns (segment offset, segment length).
+///
+/// Anchoring to the base prevents a fabricated nested directory
+/// (e.g. `<repo>/src/.claude/worktrees/`) from masquerading as a worktree
+/// and bypassing main-checkout isolation.
+fn find_worktree_segment(resolved: &str, ws: &str) -> Option<(usize, usize)> {
+    let mut innermost: Option<(usize, usize)> = None;
+    for seg in WORKTREE_SEGS {
+        if let Some(idx) = resolved.find(seg) {
+            if is_worktree_base(&resolved[..idx], ws)
+                && innermost.is_none_or(|(best, _)| idx > best)
+            {
+                innermost = Some((idx, seg.len()));
+            }
+        }
+    }
+    innermost
+}
+
+/// True when `prefix` (the path before a worktree segment) is a location
+/// where worktrees are actually created: a repo root (`<ws>/<repo>`) or a
+/// session worktree root (`<ws>/<repo>/.worktrees/<id>`, for agent worktrees
+/// nested inside one).
+fn is_worktree_base(prefix: &str, ws: &str) -> bool {
+    if ws.is_empty() {
+        return false;
+    }
+    let ws_prefix = format!("{}/", ws);
+    let Some(rest) = prefix.strip_prefix(&ws_prefix) else {
+        return false;
+    };
+    let mut parts = rest.split('/');
+    if parts.next().is_none_or(|repo| repo.is_empty()) {
+        return false;
+    }
+    match parts.next() {
+        None => true,
+        Some(".worktrees") => {
+            parts.next().is_some_and(|id| !id.is_empty()) && parts.next().is_none()
+        }
+        Some(_) => false,
+    }
 }
 
 /// Collapse `.` and `..` segments from a path string without touching the filesystem.
@@ -1138,6 +1183,30 @@ mod tests {
             "nested agent worktree file must be writable, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_nested_fake_worktree_writes_denied() {
+        // Worktree exemptions are anchored to real worktree bases: a
+        // fabricated nested dir must not masquerade as a worktree.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+        let all_tracked = |_repo_root: &str, _path: &str| IgnoreStatus::Tracked;
+        let paths = [
+            format!("{}/web-app/src/.claude/worktrees/agent-x/evil.py", ws_str),
+            format!("{}/web-app/src/.worktrees/abc12345/evil.py", ws_str),
+        ];
+        for p in &paths {
+            let result = check_path_dispatch(p, Some(&sess), ToolContext::FileTool, &all_tracked);
+            assert!(
+                matches!(result, PathDecision::Deny(_)),
+                "nested fake worktree write must be denied: {:?} got {:?}",
+                p,
+                result
+            );
+        }
     }
 
     #[test]
