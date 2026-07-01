@@ -147,7 +147,7 @@ static RE_PATCH: LazyLock<Regex> =
 
 /// Run all 9 git safety checks against a Bash command.
 ///
-/// Denial messages use the WHAT/FIX/REF remediation format so the agent
+/// Denial messages use the WHAT/FIX remediation format so the agent
 /// can self-repair without human intervention.
 pub fn check_git_safety(cmd: &str) -> GitResult {
     // FR-GS-1: Force push without --force-with-lease
@@ -157,8 +157,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     {
         return GitResult::Block(
             "WHAT: Force push without --force-with-lease. \
-             FIX: Use `git push --force-with-lease origin <branch>` instead. \
-             REF: CLAUDE.md#supply-chain-policy"
+             FIX: Use `git push --force-with-lease origin <branch>` instead."
                 .into(),
         );
     }
@@ -167,8 +166,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_PUSH_TO_MAIN.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Direct push to main/master. \
-             FIX: Create a feature branch and open a PR instead. \
-             REF: CLAUDE.md#commit-convention"
+             FIX: Create a feature branch and open a PR instead."
                 .into(),
         );
     }
@@ -177,8 +175,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_REFSPEC_MAIN.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Push to main/master via refspec. \
-             FIX: Create a feature branch and open a PR instead. \
-             REF: CLAUDE.md#commit-convention"
+             FIX: Create a feature branch and open a PR instead."
                 .into(),
         );
     }
@@ -187,16 +184,14 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_DELETE_MAIN.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting main/master branch is not allowed. \
-             FIX: Do not delete protected branches. \
-             REF: CLAUDE.md#supply-chain-policy"
+             FIX: Do not delete protected branches."
                 .into(),
         );
     }
     if RE_DELETE_REFSPEC.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting main/master branch via empty refspec is not allowed. \
-             FIX: Do not delete protected branches. \
-             REF: CLAUDE.md#supply-chain-policy"
+             FIX: Do not delete protected branches."
                 .into(),
         );
     }
@@ -205,8 +200,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_NO_VERIFY.is_match(cmd) {
         return GitResult::Block(
             "WHAT: git push --no-verify bypasses pre-push hooks. \
-             FIX: Fix the hook failures instead of skipping them. \
-             REF: CLAUDE.md#lint-suppression-policy"
+             FIX: Fix the hook failures instead of skipping them."
                 .into(),
         );
     }
@@ -215,8 +209,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_FOLLOW_TAGS.is_match(cmd) {
         return GitResult::Block(
             "WHAT: git push --follow-tags pushes ALL matching local tags. \
-             FIX: Push tags explicitly: `git push origin <tag>`. \
-             REF: CLAUDE.md#releases"
+             FIX: Push tags explicitly: `git push origin <tag>`."
                 .into(),
         );
     }
@@ -225,16 +218,14 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_DELETE_SEMVER_TAG.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting semantic version tags is not allowed. \
-             FIX: Release a new patch version instead. \
-             REF: CLAUDE.md#releases"
+             FIX: Release a new patch version instead."
                 .into(),
         );
     }
     if RE_DELETE_REMOTE_TAG.is_match(cmd) {
         return GitResult::Block(
             "WHAT: Deleting remote semantic version tags is not allowed. \
-             FIX: Release a new patch version instead. \
-             REF: CLAUDE.md#releases"
+             FIX: Release a new patch version instead."
                 .into(),
         );
     }
@@ -243,8 +234,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
     if RE_HARD_RESET.is_match(cmd) {
         return GitResult::Block(
             "WHAT: git reset --hard origin/main|master discards all local work. \
-             FIX: Use `git stash` or `git reset --soft` instead. \
-             REF: CLAUDE.md#key-design-decisions"
+             FIX: Use `git stash` or `git reset --soft` instead."
                 .into(),
         );
     }
@@ -256,8 +246,7 @@ pub fn check_git_safety(cmd: &str) -> GitResult {
         return GitResult::Block(
             "WHAT: gh api to a commit-creating endpoint makes a server-side commit \
              that bypasses local GPG/SSH signing. \
-             FIX: Commit locally with `git commit` (signed) and push instead. \
-             REF: CLAUDE.md#supply-chain-policy"
+             FIX: Commit locally with `git commit` (signed) and push instead."
                 .into(),
         );
     }
@@ -325,8 +314,7 @@ pub fn check_worktree_enforcement(
                     }
                     return Some(format!(
                         "WHAT: Git operation targets main checkout ({repo}), not the session worktree. \
-                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead. \
-                         REF: docs/architecture.md#key-invariants"
+                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead."
                     ));
                 }
             }
@@ -349,8 +337,7 @@ pub fn check_worktree_enforcement(
                     }
                     return Some(format!(
                         "WHAT: Git operation targets main checkout ({repo}), not the session worktree. \
-                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead. \
-                         REF: docs/architecture.md#key-invariants"
+                         FIX: Use `git -C {ws_str}/{repo}/.worktrees/{short_id}/` instead."
                     ));
                 }
             }
@@ -363,8 +350,9 @@ pub fn check_worktree_enforcement(
     if let Some(subcmd) = find_bare_mutating_git(cmd) {
         return Some(format!(
             "WHAT: Bare `git {subcmd}` runs in the main checkout CWD, not the session worktree. \
-             FIX: Use `git -C <repo>/.worktrees/{short_id}/ {subcmd} ...` instead. \
-             REF: docs/architecture.md#key-invariants"
+             FIX: Use `git -C <repo>/.worktrees/{short_id}/ {subcmd} ...` instead \
+             (or `git -C <repo>/.claude/worktrees/<agent-id>/ {subcmd} ...` from an \
+             isolated agent worktree)."
         ));
     }
 
@@ -795,13 +783,17 @@ fn extract_copy_dest(cmd: &str, tool_match_end: usize) -> Option<String> {
     None
 }
 
-/// Check if a path is a main checkout (not .worktrees/ or .claude-tmp/).
+/// Check if a path is a main checkout (not a session worktree, CC-native
+/// agent worktree, or session temp).
 fn is_main_checkout_path(path: &str, workspace: &str) -> bool {
     let prefix = format!("{}/", workspace);
     if !path.starts_with(&prefix) {
         return false;
     }
-    if path.contains("/.claude-tmp/") || path.contains("/.worktrees/") {
+    if path.contains("/.claude-tmp/")
+        || path.contains("/.worktrees/")
+        || path.contains("/.claude/worktrees/")
+    {
         return false;
     }
     true
@@ -1266,6 +1258,38 @@ mod tests {
             reason.is_none(),
             "expected allow for worktree path, got: {:?}",
             reason
+        );
+    }
+
+    #[test]
+    fn test_worktree_enforcement_agent_worktree_allow() {
+        // Git ops in CC agent worktrees (<repo>/.claude/worktrees/agent-<id>)
+        // are worktree ops, not main-checkout ops.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let fixed_ws = "/tmp/muzzle-test-ws";
+        std::env::set_var("MUZZLE_WORKSPACE", fixed_ws);
+        let cmds = [
+            format!("git -C {fixed_ws}/web-app/.claude/worktrees/agent-a1b2 commit -m msg"),
+            format!("git -C {fixed_ws}/web-app/.claude/worktrees/agent-a1b2 add ."),
+            format!("git -C {fixed_ws}/web-app/.claude/worktrees/agent-a1b2/src status"),
+        ];
+        for cmd in &cmds {
+            let reason = check_worktree_enforcement(cmd, true, "abc12345");
+            assert!(
+                reason.is_none(),
+                "expected allow for agent worktree git op {:?}, got {:?}",
+                cmd,
+                reason
+            );
+        }
+        // A repo .claude/ path that is NOT under .claude/worktrees/ is still
+        // the main checkout.
+        let cmd = format!("git -C {fixed_ws}/web-app/.claude commit -m msg");
+        let reason = check_worktree_enforcement(&cmd, true, "abc12345");
+        std::env::remove_var("MUZZLE_WORKSPACE");
+        assert!(
+            reason.is_some(),
+            "repo .claude/ dir itself must still count as main checkout"
         );
     }
 

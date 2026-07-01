@@ -77,8 +77,7 @@ fn check_path_dispatch(
     if is_system_path(&path_str) {
         return PathDecision::Deny(format!(
             "WHAT: Write to system path {raw_path} is not allowed. \
-             FIX: Write to a project or temp directory instead. \
-             REF: docs/architecture.md#forbidden-dependencies"
+             FIX: Write to a project or temp directory instead."
         ));
     }
 
@@ -89,8 +88,7 @@ fn check_path_dispatch(
     if is_system_path(&resolved) || is_private_system_path(&resolved) {
         return PathDecision::Deny(format!(
             "WHAT: Write to system path {raw_path} is not allowed (resolves to {resolved}). \
-             FIX: Write to a project or temp directory instead. \
-             REF: docs/architecture.md#forbidden-dependencies"
+             FIX: Write to a project or temp directory instead."
         ));
     }
 
@@ -133,8 +131,20 @@ fn check_path_dispatch(
             if sess.worktree_active {
                 // Worktrees are active — strict sandbox mode
 
-                // FR-WE-3: Allow writes to worktree paths
-                if resolved.contains("/.worktrees/") {
+                // Global Claude config; before the worktree segments so
+                // ~/.claude/worktrees/ keeps its blanket allow.
+                if resolved.starts_with(&global_claude_prefix) {
+                    return PathDecision::Allow;
+                }
+
+                // FR-WE-3: Allow writes to worktree paths — muzzle session
+                // worktrees and CC-native agent worktrees. Agent segment first
+                // so a nested agent worktree resolves against its own root.
+                const WORKTREE_SEGS: &[&str] = &["/.claude/worktrees/", "/.worktrees/"];
+                if let Some((seg, wt_idx)) = WORKTREE_SEGS
+                    .iter()
+                    .find_map(|seg| resolved.find(seg).map(|idx| (seg, idx)))
+                {
                     // Gitignored writes are redirected to the main checkout so they
                     // survive worktree teardown (research notes, .agents/, tfstate,
                     // env files, etc.). Tracked files (CLAUDE.md, source, ...) stay
@@ -142,26 +152,22 @@ fn check_path_dispatch(
                     // Closes #49 (tracked CLAUDE.md no longer redirected) and #60
                     // (gitignored writes no longer silently lost).
                     // E.g. <repo>/.worktrees/<id>/.agents/foo.md → <repo>/.agents/foo.md
-                    const WORKTREES_SEG: &str = "/.worktrees/";
-                    if let Some(wt_idx) = resolved.find(WORKTREES_SEG) {
-                        let id_start = wt_idx + WORKTREES_SEG.len();
-                        // Find the slash after the worktree ID.
-                        if let Some(id_slash) = resolved[id_start..].find('/') {
-                            // Redirect anything not confirmed tracked (ignored or
-                            // unknown) to the main checkout — never risk silent
-                            // loss of a gitignored file at teardown.
-                            let wt_root = &resolved[..id_start + id_slash]; // "<repo>/.worktrees/<id>"
-                            let after_id = &resolved[id_start + id_slash..]; // "/..." after ID
-                            if ignore_status(wt_root, &resolved) != IgnoreStatus::Tracked {
-                                let repo_prefix = &resolved[..wt_idx];
-                                return PathDecision::Deny(format!(
-                                    "REDIRECT: gitignored path must persist across sessions. \
-                                     WHAT: {resolved} is gitignored and would be lost when the \
-                                     session worktree is removed. \
-                                     FIX: Write to: {repo_prefix}{after_id} (main checkout). \
-                                     REF: docs/architecture.md#key-invariants"
-                                ));
-                            }
+                    let id_start = wt_idx + seg.len();
+                    // Find the slash after the worktree ID.
+                    if let Some(id_slash) = resolved[id_start..].find('/') {
+                        // Redirect anything not confirmed tracked (ignored or
+                        // unknown) to the main checkout — never risk silent
+                        // loss of a gitignored file at teardown.
+                        let wt_root = &resolved[..id_start + id_slash]; // "<repo>/.worktrees/<id>"
+                        let after_id = &resolved[id_start + id_slash..]; // "/..." after ID
+                        if ignore_status(wt_root, &resolved) != IgnoreStatus::Tracked {
+                            let repo_prefix = &resolved[..wt_idx];
+                            return PathDecision::Deny(format!(
+                                "REDIRECT: gitignored path must persist across sessions. \
+                                 WHAT: {resolved} is gitignored and would be lost when the \
+                                 session worktree is removed. \
+                                 FIX: Write to: {repo_prefix}{after_id} (main checkout)."
+                            ));
                         }
                     }
                     return PathDecision::Allow;
@@ -174,11 +180,6 @@ fn check_path_dispatch(
 
                 // FR-WE-5: Allow writes to state directory (changelogs, specs, tmp)
                 if resolved.starts_with(&state_dir_prefix) {
-                    return PathDecision::Allow;
-                }
-
-                // Global Claude config
-                if resolved.starts_with(&global_claude_prefix) {
                     return PathDecision::Allow;
                 }
 
@@ -207,8 +208,7 @@ fn check_path_dispatch(
                         format!("{}/{}/.worktrees/{}/{}", ws_str, repo, sess.short_id, rel);
                     return PathDecision::Deny(format!(
                         "WHAT: Write targets main checkout, not the session worktree. \
-                         FIX: Use the worktree path instead: {wt_path}. \
-                         REF: docs/architecture.md#key-invariants"
+                         FIX: Use the worktree path instead: {wt_path}."
                     ));
                 }
             } else {
@@ -234,8 +234,7 @@ fn check_path_dispatch(
                     }
                     return PathDecision::Deny(
                         "WHAT: No worktree exists and repo name could not be extracted. \
-                         FIX: Ensure the write path is inside a known repo directory. \
-                         REF: docs/architecture.md#key-invariants"
+                         FIX: Ensure the write path is inside a known repo directory."
                             .into(),
                     );
                 }
@@ -1069,6 +1068,91 @@ mod tests {
             matches!(&unknown_wt, PathDecision::Deny(m) if m.contains("REDIRECT")),
             "unknown-verdict worktree path must redirect to main, got {:?}",
             unknown_wt
+        );
+    }
+
+    #[test]
+    fn test_agent_worktree_writes() {
+        // CC agent worktrees (<repo>/.claude/worktrees/agent-<id>) are
+        // worktree content (FR-WE-3), not per-repo .claude/ config: tracked
+        // files stay in place, gitignored files redirect to the main checkout.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let sess = sess_with_worktrees();
+        let ws = config::workspace();
+        let ws_str = ws.to_string_lossy();
+
+        // Models a repo gitignoring *.local; everything else is tracked.
+        let ignore_local = |_repo_root: &str, path: &str| {
+            if path.ends_with(".local") {
+                IgnoreStatus::Ignored
+            } else {
+                IgnoreStatus::Tracked
+            }
+        };
+
+        let tracked = format!(
+            "{}/web-app/.claude/worktrees/agent-a1b2/src/main.py",
+            ws_str
+        );
+        let result =
+            check_path_dispatch(&tracked, Some(&sess), ToolContext::FileTool, &ignore_local);
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "tracked file in agent worktree must be writable, got {:?}",
+            result
+        );
+
+        let gitignored = format!("{}/web-app/.claude/worktrees/agent-a1b2/dev.local", ws_str);
+        let result = check_path_dispatch(
+            &gitignored,
+            Some(&sess),
+            ToolContext::FileTool,
+            &ignore_local,
+        );
+        match &result {
+            PathDecision::Deny(msg) => {
+                assert!(msg.contains("REDIRECT"), "expected REDIRECT, got: {}", msg);
+                let target = msg.split("Write to: ").nth(1).unwrap_or("");
+                assert!(
+                    target.starts_with(&format!("{}/web-app/dev.local", ws_str)),
+                    "redirect must target the main checkout, got: {}",
+                    target
+                );
+            }
+            other => panic!(
+                "expected REDIRECT for gitignored agent-worktree file, got {:?}",
+                other
+            ),
+        }
+
+        // Agent worktree nested inside a session worktree resolves against its
+        // own (innermost) root and stays writable.
+        let nested = format!(
+            "{}/web-app/.worktrees/abc12345/.claude/worktrees/agent-a1b2/src/main.py",
+            ws_str
+        );
+        let result =
+            check_path_dispatch(&nested, Some(&sess), ToolContext::FileTool, &ignore_local);
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "nested agent worktree file must be writable, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_home_claude_worktrees_allowed() {
+        // ~/.claude/worktrees/ is global Claude config space, not a repo
+        // worktree — the blanket ~/.claude/ allow applies, never the
+        // gitignore redirect.
+        let sess = sess_with_worktrees();
+        let home = config::home();
+        let p = format!("{}/.claude/worktrees/proj/wt1/notes.md", home.display());
+        let result = check_path_t(&p, Some(&sess));
+        assert!(
+            matches!(result, PathDecision::Allow),
+            "home .claude/worktrees path must be allowed, got {:?}",
+            result
         );
     }
 

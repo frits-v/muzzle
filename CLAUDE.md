@@ -192,7 +192,7 @@ All shell scripts follow the [Google Shell Style Guide](https://google.github.io
 
 ## Testing
 
-345 tests (309 hooks unit + 5 claude_md + 17 integration + 14 proptest) plus 4 fuzz targets.
+349 tests (313 hooks unit + 5 claude_md + 17 integration + 14 proptest) plus 4 fuzz targets.
 Run with `make test` or `cargo test`.
 
 Test patterns:
