@@ -72,7 +72,7 @@
       },
       {
         "scope": [],
-        "rule": "All Block() and Deny() denial messages in gitcheck.rs, sandbox.rs, and lib.rs must contain WHAT:, FIX:, and REF: tokens. Exception: the REDIRECT message for config paths in sandbox.rs (containing 'config path must persist') is exempt. Flag new denial messages missing any of the three fields."
+        "rule": "All Block() and Deny() denial messages in gitcheck.rs, sandbox.rs, and lib.rs must contain WHAT: and FIX: tokens. Do not add REF: pointers to repo-internal docs (docs/architecture.md, CLAUDE.md) — denial messages are consumed by agents running in other repos that cannot read muzzle's files. Flag new denial messages missing either field."
       },
       {
         "scope": [],

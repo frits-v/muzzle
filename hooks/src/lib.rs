@@ -22,7 +22,7 @@ pub mod worktree;
 
 /// Format a WORKTREE_MISSING denial message for lazy worktree creation.
 ///
-/// Uses the WHAT/FIX/REF remediation format so the agent can self-repair, and
+/// Uses the WHAT/FIX remediation format so the agent can self-repair, and
 /// names common Bash bypass vectors so they aren't rationalized as a workaround.
 pub fn worktree_missing_msg(repo: &str) -> String {
     let bin = config::bin_dir().join("ensure-worktree");
@@ -31,8 +31,7 @@ pub fn worktree_missing_msg(repo: &str) -> String {
          WHAT: No worktree exists for repo '{repo}' in this session. \
          FIX: Run `{} {repo}` to create one, then retry the write. \
          DO NOT use Bash (sed -i, cp, mv, perl -i, dd, patch, ...) to bypass this — \
-         all writes to the main checkout are forbidden during worktree sessions. \
-         REF: docs/architecture.md#key-invariants",
+         all writes to the main checkout are forbidden during worktree sessions.",
         bin.display()
     )
 }
