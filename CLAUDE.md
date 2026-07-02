@@ -209,7 +209,7 @@ Test patterns:
 Automated via [release-please](https://github.com/googleapis/release-please):
 
 1. Push conventional commits to `main`
-2. Release-please opens a "Release PR" bumping `Cargo.toml` version + `CHANGELOG.md`
+2. Release-please opens a "Release PR" bumping `hooks/Cargo.toml` version + `hooks/CHANGELOG.md`
 3. Merge the PR → creates git tag + GitHub Release
 4. Release workflow builds macOS binaries (arm64 + x86_64), cosign-signs, uploads
 

@@ -1,11 +1,17 @@
 {
   "packages": {
-    ".": {
+    "hooks": {
       "release-type": "rust",
+      "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "last-release-sha": "e1033cc154eb49de7ffeff1935467872fbe2bdc7"
     }
   },
+  "plugins": [
+    {
+      "type": "cargo-workspace"
+    }
+  ],
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
 }

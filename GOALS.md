@@ -251,7 +251,7 @@ Implement path-based risk classification for changes:
 
 | Risk | Paths | Gate Config |
 |------|-------|-------------|
-| Low | docs/, tests/, scripts/, CHANGELOG.md | Standard gates |
+| Low | docs/, tests/, scripts/, hooks/CHANGELOG.md | Standard gates |
 | Medium | hooks/src/ (non-critical) | Standard + proptest |
 | High | sandbox.rs, gitcheck.rs, session.rs, worktree/ | All gates + second-agent review |
 
